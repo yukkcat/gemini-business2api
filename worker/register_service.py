@@ -77,14 +77,15 @@ def register_one(
 
     _log("info", f"✅ 邮箱注册成功: {client.email}")
 
+    browser_mode = (cfg.basic.browser_mode or "normal").strip().lower()
     headless = cfg.basic.browser_headless
     proxy_for_auth, _ = parse_proxy_setting(cfg.basic.proxy_for_auth)
 
-    _log("info", f"🌐 步骤 2/3: 启动浏览器 (无头模式={headless})...")
+    _log("info", f"🌐 步骤 2/3: 启动浏览器 (模式={browser_mode}, 无头={headless})...")
 
     automation = GeminiAutomation(
         proxy=proxy_for_auth,
-        headless=headless,
+        browser_mode=browser_mode,
         log_callback=_log,
     )
 

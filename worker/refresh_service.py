@@ -400,14 +400,15 @@ class RefreshService:
         else:
             return {"success": False, "email": account_id, "error": f"unsupported mail provider: {mail_provider}"}
 
+        browser_mode = (config.basic.browser_mode or "normal").strip().lower()
         headless = config.basic.browser_headless
 
-        log_cb("info", f"🌐 启动浏览器 (无头模式={headless})...")
+        log_cb("info", f"🌐 启动浏览器 (模式={browser_mode}, 无头={headless})...")
 
         from worker.gemini_automation import GeminiAutomation
         automation = GeminiAutomation(
             proxy=proxy_for_auth,
-            headless=headless,
+            browser_mode=browser_mode,
             log_callback=log_cb,
         )
         # Allow external cancel to close browser immediately

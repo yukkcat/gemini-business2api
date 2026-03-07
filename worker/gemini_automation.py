@@ -42,6 +42,10 @@ COMMON_VIEWPORTS = [
     (1920, 1080), (1600, 900), (1280, 800), (1360, 768),
 ]
 
+BROWSER_MODE_NORMAL = "normal"
+BROWSER_MODE_SILENT = "silent"
+BROWSER_MODE_HEADLESS = "headless"
+
 
 def _find_chromium_path() -> Optional[str]:
     """查找可用的 Chromium/Chrome 浏览器路径"""
@@ -56,6 +60,13 @@ def _data_file_path(name: str) -> str:
     return os.path.join("data", name)
 
 
+def _normalize_browser_mode(mode: str, default: str = BROWSER_MODE_NORMAL) -> str:
+    value = (mode or "").strip().lower()
+    if value in (BROWSER_MODE_NORMAL, BROWSER_MODE_SILENT, BROWSER_MODE_HEADLESS):
+        return value
+    return default
+
+
 class GeminiAutomation:
     """Gemini自动化登录（支持刷新和注册）"""
 
@@ -64,12 +75,15 @@ class GeminiAutomation:
         user_agent: str = "",
         proxy: str = "",
         headless: bool = True,
+        browser_mode: str = "",
         timeout: int = 60,
         log_callback=None,
     ) -> None:
         self.user_agent = user_agent or self._get_ua()
         self.proxy = proxy
-        self.headless = headless
+        default_mode = BROWSER_MODE_HEADLESS if headless else BROWSER_MODE_NORMAL
+        self.browser_mode = _normalize_browser_mode(browser_mode, default_mode)
+        self.headless = self.browser_mode == BROWSER_MODE_HEADLESS
         self.timeout = timeout
         self.log_callback = log_callback
         self._page = None
@@ -144,7 +158,7 @@ class GeminiAutomation:
         if self.proxy:
             options.set_argument(f"--proxy-server={self.proxy}")
 
-        if self.headless:
+        if self.browser_mode == BROWSER_MODE_HEADLESS:
             # 使用新版无头模式，更接近真实浏览器
             options.set_argument("--headless=new")
             options.set_argument("--disable-gpu")
@@ -153,10 +167,15 @@ class GeminiAutomation:
             # 反检测参数
             options.set_argument("--disable-infobars")
             options.set_argument("--enable-features=NetworkService,NetworkServiceInProcess")
+        elif self.browser_mode == BROWSER_MODE_SILENT:
+            # 静默模式：有头运行，但尽量最小化，减少抢占焦点
+            options.set_argument("--start-minimized")
 
         options.auto_port()
         page = ChromiumPage(options)
         page.set.timeouts(self.timeout)
+        if self.browser_mode == BROWSER_MODE_SILENT:
+            self._minimize_window(page)
 
         # 最小化 JS 注入：只设置 window.chrome（不使用 Object.defineProperty，避免被 reCAPTCHA 检测）
         try:
@@ -169,6 +188,20 @@ class GeminiAutomation:
             pass
 
         return page
+
+    def _minimize_window(self, page) -> None:
+        """尽力将窗口最小化，避免抢占焦点。"""
+        try:
+            info = page.run_cdp("Browser.getWindowForTarget")
+            if isinstance(info, dict) and info.get("windowId") is not None:
+                page.run_cdp(
+                    "Browser.setWindowBounds",
+                    windowId=info["windowId"],
+                    bounds={"windowState": "minimized"},
+                )
+        except Exception:
+            # 有些环境（如无头/Xvfb）不支持窗口状态控制，静默忽略。
+            pass
 
     def _extract_xsrf_token(self, page) -> str:
         """从页面中提取真实的 XSRF Token（避免硬编码被标黑）"""

@@ -1,77 +1,91 @@
 # gemini-refresh-worker
 
-独立部署的 Gemini Business 账户自动刷新服务，从 [gemini-business2api](https://github.com/Dreamy-rain/gemini-business2api) 主项目中拆分而来。
+独立部署的 Gemini Business 账户刷新服务。  
+Standalone refresh service for Gemini Business accounts.
 
-连接与主服务相同的数据库，自动检测即将过期的账户并通过浏览器自动化重新登录获取新凭证。
+它从主项目 [gemini-business2api](https://github.com/Dreamy-rain/gemini-business2api) 中拆分而来，专注于“检测即将过期账号并自动刷新凭证”。  
+It is split from the main project and focuses on detecting expiring accounts and refreshing credentials automatically.
 
-## 功能
+## 推荐场景 / Recommended Topology
 
-- 定时轮询数据库，检测 cookie 即将过期的账户
-- 使用 Chromium 浏览器自动化完成 Gemini Business 登录
-- 支持多种邮箱验证码提供商（DuckMail、Moemail、Freemail、GPTMail、Microsoft OAuth）
-- **自动删除过期账户**：试用期（`trial_end`）到期后自动清理数据库中的账户记录
-- **自动注册补充账户**：活跃账户数低于阈值时自动注册新账户
-- 环境变量独立控制，可覆盖数据库中的配置
-- 支持 PostgreSQL 和 SQLite 两种数据库后端
-- 内置 HTTP 健康检查端口
-- Docker 一键部署
+- 远程部署一套 `beta`（提供管理面板与 API）。  
+  Deploy one remote `beta` instance (admin panel + API).
+- 本地运行 `refresh-worker`（执行浏览器自动化刷新）。  
+  Run `refresh-worker` locally (browser automation executor).
+- 不需要本地再部署第二套 `beta`。  
+  You do not need a second local `beta`.
 
-## 项目结构
+## 功能概览 / Feature Overview
 
-```
-.
-├── .github/workflows/
-│   └── docker-build.yml       # GitHub Actions 自动构建镜像
-├── worker/
-│   ├── main.py                # 入口：轮询循环 + 健康检查
-│   ├── config.py              # 配置管理（数据库 + 环境变量覆盖）
-│   ├── storage.py             # 数据库抽象（PostgreSQL / SQLite）
-│   ├── refresh_service.py     # 刷新编排：过期检测 + 过期删除 + 自动注册 + 任务执行
-│   ├── register_service.py    # 账号注册服务（自动注册新账号）
-│   ├── gemini_automation.py   # 浏览器自动化（DrissionPage/Chromium，支持刷新和注册）
-│   ├── mail_utils.py          # 验证码提取
-│   ├── proxy_utils.py         # 代理解析
-│   ├── child_reaper.py        # 僵尸进程清理
-│   └── mail_clients/          # 邮箱客户端
-│       ├── __init__.py        # 工厂函数
-│       ├── duckmail_client.py
-│       ├── freemail_client.py
-│       ├── gptmail_client.py
-│       ├── moemail_client.py
-│       └── microsoft_mail_client.py
-├── Dockerfile
-├── docker-compose.yml           # 从源码构建部署
-├── docker-compose.deploy.yml    # 拉取镜像直接部署
-├── entrypoint.sh
-├── requirements.txt
-├── .env.example
-├── .gitignore
-└── README.md
+- 定时轮询刷新即将过期账号。  
+  Scheduled polling for accounts close to expiration.
+- 支持手动触发“一次刷新”。  
+  Supports manual "run once" refresh.
+- 支持远程项目模式（通过远程管理 API 拉取/回写数据）。  
+  Supports remote project mode (read/write via remote admin APIs).
+- 支持本机代理诊断（Google 连通性检测）。  
+  Built-in local proxy/Google connectivity diagnostics.
+- 支持自动删除过期账号、自动补充注册账号（可选）。  
+  Optional lifecycle automation: delete expired accounts and auto-register new ones.
+
+## 快速开始 / Quick Start
+
+### 1) 准备环境变量 / Prepare environment variables
+
+```bash
+cp .env.example .env
 ```
 
-## 快速开始
+按你的场景填写 `.env`。  
+Fill `.env` based on your deployment mode.
 
-### 前置条件
+### 2) 选择存储模式（二选一）/ Choose storage mode (pick one)
 
-- 已部署 gemini-business2api 主服务并有可用的数据库
-- 数据库中已配置账户（通过主服务管理面板添加）
-
-### 方式一：使用预构建镜像部署（推荐）
-
-无需克隆代码，直接拉取镜像运行。
-
-1. 创建 `.env` 文件：
+**模式 A：数据库直连 / Mode A: direct database**
 
 ```env
 DATABASE_URL=postgresql://user:password@host:5432/dbname?sslmode=require
-FORCE_REFRESH_ENABLED=true
-REFRESH_INTERVAL_MINUTES=30
-BROWSER_HEADLESS=true
-HEALTH_PORT=8080
-LOG_LEVEL=INFO
 ```
 
-2. 使用 `docker run` 直接运行：
+**模式 B：远程项目模式（推荐）/ Mode B: remote project (recommended)**
+
+```env
+REMOTE_PROJECT_BASE_URL=https://your-beta-domain.example
+REMOTE_PROJECT_PASSWORD=your_admin_key
+```
+
+如果两个都配置了，优先使用远程项目模式。  
+If both are configured, remote project mode takes precedence.
+
+可选：设置浏览器模式（默认 `normal`）。  
+Optional: set browser mode (default `normal`).
+
+```env
+BROWSER_MODE=silent
+```
+
+### 3) 启动方式 / Run options
+
+**本地 Python 运行 / Run with Python**
+
+```bash
+pip install -r requirements.txt
+python -m worker.main
+```
+
+**本地交互菜单 / Interactive console**
+
+```bash
+python -m worker.cli
+```
+
+**Docker Compose（源码）/ Docker Compose (from source)**
+
+```bash
+docker compose up -d --build
+```
+
+**Docker（镜像）/ Docker (image)**
 
 ```bash
 docker run -d \
@@ -82,266 +96,152 @@ docker run -d \
   your_dockerhub_username/gemini-refresh-worker:latest
 ```
 
-或者下载 [`docker-compose.deploy.yml`](docker-compose.deploy.yml) 后放在与 `.env` 同一目录：
+### 4) 手动执行一次刷新 / Trigger one refresh manually
 
 ```bash
-export DOCKERHUB_USERNAME=your_dockerhub_username
-docker-compose -f docker-compose.deploy.yml up -d
+python -m worker.cli once
 ```
 
-### 方式二：从源码构建部署
-
-```bash
-git clone https://github.com/YOUR_USERNAME/gemini-refresh-worker.git
-cd gemini-refresh-worker
-cp .env.example .env
-# 编辑 .env，至少配置 DATABASE_URL
-docker-compose up -d --build
-```
-
-查看日志：
-
-```bash
-docker-compose logs -f
-```
-
-### 方式三：手动构建并推送镜像
-
-适合需要自建镜像仓库或自定义镜像的场景。
-
-```bash
-# 构建多架构镜像并推送到 Docker Hub
-docker buildx create --use
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t your_dockerhub_username/gemini-refresh-worker:latest \
-  --push .
-```
-
-推送后，在任意机器上只需 `docker pull` 即可使用。
-
-### 本地运行（无 Docker）
-
-```bash
-pip install -r requirements.txt
-# 安装 Chromium 浏览器
-# 配置 .env 文件
-python -m worker.main
-```
-
-## 配置
-
-Worker 的配置来自两个来源，环境变量优先级高于数据库：
-
-### 数据库配置（从主服务管理面板设置）
-
-Worker 每个轮询周期都会从数据库重新读取配置（热更新），包括：
-- 定时刷新开关和间隔
-- 邮箱提供商设置
-- 代理设置
-- 浏览器无头模式
-
-### 环境变量（覆盖数据库配置）
-
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `DATABASE_URL` | 数据库连接字符串（必填） | — |
-| `LOG_LEVEL` | 日志级别：DEBUG, INFO, WARNING, ERROR | `INFO` |
-| `HEALTH_PORT` | 健康检查端口，0 = 禁用 | `0` |
-| `FORCE_REFRESH_ENABLED` | 强制开启/关闭定时刷新（覆盖数据库设置） | 未设置（使用数据库值） |
-| `REFRESH_INTERVAL_MINUTES` | 刷新检测间隔，分钟（1-720） | 未设置（使用数据库值） |
-| `REFRESH_WINDOW_HOURS` | 过期窗口，小时（0-24），在此窗口内的账户将被刷新 | 未设置（使用数据库值） |
-| `BROWSER_HEADLESS` | 浏览器无头模式 | 未设置（使用数据库值） |
-| `PROXY_FOR_AUTH` | 认证代理地址 | 未设置（使用数据库值） |
-| `DELETE_EXPIRED_ACCOUNTS` | 自动删除试用期（`trial_end`）已到期的账户 | 未设置（使用数据库值） |
-| `AUTO_REGISTER_ENABLED` | 账户不足时自动注册新账户 | 未设置（使用数据库值） |
-| `MIN_ACCOUNT_COUNT` | 最低活跃账户数量，低于此值触发自动注册（0 = 禁用） | 未设置（使用数据库值） |
-| `REGISTER_DOMAIN` | 注册账号使用的邮箱域名（DuckMail 专用） | 未设置（使用数据库值） |
-| `REGISTER_DEFAULT_COUNT` | 单次注册账号数量（1-20） | 未设置（使用数据库值） |
-
-**典型独立部署配置**：
-
-```env
-DATABASE_URL=postgresql://user:password@db-host:5432/gemini
-FORCE_REFRESH_ENABLED=true
-REFRESH_INTERVAL_MINUTES=30
-BROWSER_HEADLESS=true
-HEALTH_PORT=8080
-DELETE_EXPIRED_ACCOUNTS=true
-AUTO_REGISTER_ENABLED=true
-MIN_ACCOUNT_COUNT=5
-```
-
-这样 Worker 不依赖主服务面板来控制刷新开关，完全通过环境变量独立运行。
-
-## 工作原理
-
-```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│  轮询循环     │────▶│  过期检测      │────▶│  浏览器自动化  │
-│  (interval)  │     │  (window_hrs) │     │  (Chromium)   │
-└─────────────┘     └──────────────┘     └──────────────┘
-       │                    │                     │
-       ▼                    ▼                     ▼
-  重新加载配置          读取账户列表           登录 + 获取凭证
-  (热更新)            检查 expires_at          更新数据库
-       │
-       ▼
-  ┌──────────────┐     ┌──────────────┐
-  │  过期清理      │────▶│  自动注册      │
-  │  (可选)       │     │  (可选)       │
-  └──────────────┘     └──────────────┘
-       │                     │
-       ▼                     ▼
-  删除试用期到期账户     注册新账户补充
-```
-
-1. **轮询循环**：按配置的间隔（默认 30 分钟）周期性检查
-2. **过期检测**：从数据库加载所有账户，找出 `expires_at` 在刷新窗口内的账户
-3. **浏览器自动化**：启动 Chromium，模拟登录 Gemini Business，提取新的 cookie
-4. **邮箱验证码**：如果登录需要验证码，自动通过配置的邮箱提供商获取
-5. **保存结果**：将新的凭证和过期时间写回数据库
-6. **过期清理**（可选）：删除试用期（`trial_end`）已到期的账户记录
-7. **自动注册**（可选）：当活跃账户数低于 `MIN_ACCOUNT_COUNT` 时，自动注册新账户补充
-
-## 健康检查
-
-当 `HEALTH_PORT` > 0 时，Worker 会在指定端口启动一个 HTTP 健康检查服务：
+### 5) 健康检查 / Health check
 
 ```bash
 curl http://localhost:8080/health
 # {"status":"ok"}
 ```
 
-Docker 的 `HEALTHCHECK` 已配置为自动检查此端口。
+## CLI 命令 / CLI Commands
 
-## 与主服务的关系
+| 命令 / Command | 说明（中文） | Description (English) |
+|---|---|---|
+| `python -m worker.cli` | 打开交互菜单 | Open interactive menu |
+| `python -m worker.cli once` | 立即执行一轮刷新 | Run one refresh immediately |
+| `python -m worker.cli poll` | 前台守护轮询 | Start foreground polling loop |
+| `python -m worker.cli doctor` | 配置 + 远程连接 + Google 诊断 | Config + remote check + Google diagnostics |
+| `python -m worker.cli google` | 仅做 Google/代理诊断 | Google/proxy diagnostics only |
+| `python -m worker.cli wizard` | 交互写入 `.env` | Interactive `.env` setup wizard |
+| `python -m worker.cli lang en --save` | 切换语言并写入 `.env` | Switch language and persist into `.env` |
 
-- Worker 和主服务共享同一个数据库
-- Worker 只**读取**账户列表和配置，**更新**账户凭证和任务历史
-- 不会修改主服务的 API 网关功能
-- 可以和主服务部署在不同的机器上，只要能访问同一个数据库
+交互菜单里也提供语言切换选项，默认中文。  
+Language switch is also available in interactive menu, default is Chinese.
 
-## 故障排查
+## 环境变量 / Environment Variables
 
-**Worker 启动失败 "DATABASE_URL not configured"**
-- 确保 `.env` 文件中配置了 `DATABASE_URL`，或通过环境变量传入
+### 核心变量 / Core variables
 
-**日志显示 "scheduled refresh disabled, sleeping"**
-- 数据库中的定时刷新未开启，且未设置 `FORCE_REFRESH_ENABLED=true`
-- 设置 `FORCE_REFRESH_ENABLED=true` 即可独立控制
+| 变量 | 中文说明 | English |
+|---|---|---|
+| `DATABASE_URL` | 直连数据库模式连接串 | DB URL for direct database mode |
+| `REMOTE_PROJECT_BASE_URL` | 远程项目地址（beta 地址） | Remote project base URL (beta URL) |
+| `REMOTE_PROJECT_PASSWORD` | 远程管理密码（登录密码 / ADMIN_KEY） | Remote admin password (login password / ADMIN_KEY) |
+| `CLI_LANG` | CLI 语言（`zh`/`en`，默认 `zh`） | CLI language (`zh`/`en`, default `zh`) |
+| `LOG_LEVEL` | 日志级别：`DEBUG/INFO/WARNING/ERROR` | Log level |
+| `HEALTH_PORT` | 健康检查端口，`0` 为关闭 | Health check port (`0` disables) |
 
-**日志显示 "no accounts need refresh"**
-- 所有账户的 cookie 尚未接近过期，无需刷新
-- 可调大 `REFRESH_WINDOW_HOURS` 来提前刷新
+### 远程模式变量 / Remote mode variables
 
-**浏览器自动化失败**
-- 确保 Chromium 已安装（Docker 镜像已内置）
-- 确保 Xvfb 正在运行（Docker entrypoint 已自动启动）
-- 检查代理设置是否正确
+| 变量 | 中文说明 | English |
+|---|---|---|
+| `REMOTE_PROJECT_VERIFY_SSL` | 是否校验远程 HTTPS 证书 | Verify remote HTTPS certificate |
+| `REMOTE_PROJECT_TIMEOUT_SECONDS` | 远程 API 超时时间（秒） | Remote API timeout in seconds |
+| `REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH` | 是否继承远程 `proxy_for_auth`（默认 `false`） | Whether to inherit remote `proxy_for_auth` (default `false`) |
 
-## CI/CD 自动构建
+### 刷新覆盖变量 / Refresh override variables
 
-项目已配置 GitHub Actions（`.github/workflows/docker-build.yml`），推送到 `main` 分支时会自动构建 `linux/amd64` + `linux/arm64` 多架构镜像并推送到 Docker Hub。
+| 变量 | 中文说明 | English |
+|---|---|---|
+| `FORCE_REFRESH_ENABLED` | 强制开关定时刷新（覆盖存储配置） | Force scheduled refresh on/off (override storage config) |
+| `REFRESH_INTERVAL_MINUTES` | 刷新检测间隔（分钟） | Refresh check interval in minutes |
+| `REFRESH_WINDOW_HOURS` | 过期窗口（小时） | Expiration window in hours |
+| `BROWSER_MODE` | 浏览器模式：`normal`/`silent`/`headless` | Browser mode: `normal`/`silent`/`headless` |
+| `BROWSER_HEADLESS` | 兼容旧字段（若设置了 `BROWSER_MODE` 将被忽略） | Legacy compatibility field (ignored when `BROWSER_MODE` is set) |
+| `PROXY_FOR_AUTH` | 本机认证代理（如 `socks5h://127.0.0.1:7890`） | Local auth proxy |
 
-需要在 GitHub 仓库的 Settings → Secrets and variables → Actions 中配置：
-- `DOCKERHUB_USERNAME` — Docker Hub 用户名
-- `DOCKERHUB_TOKEN` — Docker Hub Access Token
+浏览器模式建议：  
+Browser mode recommendations:
 
-也可以手动触发（workflow_dispatch），或通过打 `v*` 格式的 tag 触发。
+- `normal`：正常有头窗口，适合人工观察。  
+  `normal`: regular headed window, good for active observation.
+- `silent`：有头运行但尽量最小化，减少抢占焦点。  
+  `silent`: headed but minimized to reduce focus stealing.
+- `headless`：完全无头，资源占用更低。  
+  `headless`: fully headless, usually lower resource usage.
 
-## 常见部署平台
+### 账号生命周期变量 / Account lifecycle variables
 
-### Render / Railway / Fly.io
+| 变量 | 中文说明 | English |
+|---|---|---|
+| `DELETE_EXPIRED_ACCOUNTS` | 自动删除凭证过期账号 | Auto-delete accounts with expired credentials |
+| `AUTO_REGISTER_ENABLED` | 自动补充注册账号 | Auto-register new accounts when needed |
+| `MIN_ACCOUNT_COUNT` | 最低活跃账号数量阈值 | Minimum active account threshold |
+| `REGISTER_DOMAIN` | 注册邮箱域名（DuckMail） | Registration email domain (DuckMail) |
+| `REGISTER_DEFAULT_COUNT` | 单批注册数量（1-20） | Accounts to register per batch (1-20) |
 
-这类平台支持直接填入 Docker 镜像地址部署：
+## 远程模式说明 / Remote Mode Notes
 
-1. 指定镜像：`your_dockerhub_username/gemini-refresh-worker:latest`
-2. 配置环境变量（`DATABASE_URL`, `FORCE_REFRESH_ENABLED=true` 等）
-3. 健康检查路径设为 `/health`，端口 `8080`
-
-### Kubernetes
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: gemini-refresh-worker
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: gemini-refresh-worker
-  template:
-    metadata:
-      labels:
-        app: gemini-refresh-worker
-    spec:
-      containers:
-        - name: worker
-          image: your_dockerhub_username/gemini-refresh-worker:latest
-          envFrom:
-            - secretRef:
-                name: gemini-worker-secrets
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 30
-```
-
-## Remote Beta Mode (local worker + remote beta)
-
-`refresh-worker` now supports a remote project mode.  
-In this mode, local worker executes browser automation locally, but account/settings data is read/written through remote beta admin APIs.
-
-Required environment variables:
-
-```env
-REMOTE_PROJECT_BASE_URL=https://your-beta-domain.example
-REMOTE_PROJECT_PASSWORD=your_admin_key
-```
-
-Optional:
-
-```env
-REMOTE_PROJECT_VERIFY_SSL=true
-REMOTE_PROJECT_TIMEOUT_SECONDS=30
-```
-
-When `REMOTE_PROJECT_BASE_URL` is set, storage backend switches to `remote` automatically.
-
-Remote API endpoints used:
+远程模式会通过以下接口读写数据：  
+Remote mode reads/writes data via these endpoints:
 
 - `POST /login`
 - `GET /admin/settings`
 - `GET /admin/accounts-config`
 - `PUT /admin/accounts-config`
 
-This is the recommended setup for:
+代理行为说明：  
+Proxy behavior:
 
-- Remote deployment: `beta` (public/admin service)
-- Local machine: `refresh-worker` (browser execution node)
+- 默认不继承远程站点 `proxy_for_auth`，避免把远程 `localhost` 代理误用到本机。  
+  By default, remote `proxy_for_auth` is not inherited to avoid misusing remote `localhost` proxy locally.
+- 如确有需要，可设置 `REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH=true`。  
+  Set `REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH=true` only if needed.
 
-## CLI (Chinese interactive mode)
+## 刷新流程 / Refresh Flow
 
-For local operation, you can use the CLI instead of only daemon mode:
+1. 读取最新配置（环境变量优先，支持热更新）。  
+   Load latest config (env vars override storage; hot reload supported).
+2. 根据刷新窗口筛选即将过期账号。  
+   Select accounts that are close to expiration.
+3. 串行执行刷新任务，避免重复并发刷新同一账号。  
+   Execute refresh tasks serially to avoid duplicate concurrent refreshes.
+4. 写回新凭证与状态。  
+   Persist refreshed credentials and status.
+5. 根据配置执行过期清理与自动注册。  
+   Run optional expiry cleanup and auto-registration.
 
-```bash
-python -m worker.cli
-```
+## 故障排查 / Troubleshooting
 
-Useful subcommands:
+**1) 启动报错：`DATABASE_URL or REMOTE_PROJECT_BASE_URL not configured`**
 
-- `python -m worker.cli once` : run one refresh round immediately
-- `python -m worker.cli doctor` : print config + test remote connectivity
-- `python -m worker.cli wizard` : write remote-mode values into `.env`
-- `python -m worker.cli poll` : start polling in foreground
+- 需要至少配置一组存储后端。  
+  You must configure at least one storage backend.
 
-Docker keeps using daemon mode (`python -m worker.main`) by default.
-If you need manual trigger inside container:
+**2) 经常出现 Google 无法访问 / Google frequently unreachable**
 
-```bash
-docker compose exec refresh-worker python -m worker.cli once
-```
+- 先执行：`python -m worker.cli google`。  
+  First run diagnostics with `python -m worker.cli google`.
+- 确认本机代理可用并设置 `PROXY_FOR_AUTH`。  
+  Confirm local proxy works and set `PROXY_FOR_AUTH`.
+- 远程模式下默认不会继承远程代理，这属于设计行为。  
+  In remote mode, not inheriting remote proxy is expected behavior.
+
+**3) 日志显示 `scheduled refresh disabled, sleeping`**
+
+- 存储配置里定时刷新关闭了。  
+  Scheduled refresh is disabled in storage config.
+- 可设置 `FORCE_REFRESH_ENABLED=true` 强制开启。  
+  Set `FORCE_REFRESH_ENABLED=true` to force enable.
+
+**4) 日志显示 `no accounts need refresh`**
+
+- 账号未到刷新窗口。  
+  Accounts are not within refresh window yet.
+- 可调大 `REFRESH_WINDOW_HOURS`。  
+  Increase `REFRESH_WINDOW_HOURS` if needed.
+
+## 与主服务关系 / Relationship with Main Service
+
+- Worker 与主服务可分机部署。  
+  Worker and main service can run on different machines.
+- Worker 负责账号刷新执行，不负责 API 网关业务。  
+  Worker handles refresh execution, not API gateway logic.
+- 远程模式下，本地 worker 仍执行浏览器自动化，只是数据从远程管理接口读写。  
+  In remote mode, browser automation still runs locally; only data I/O goes through remote admin APIs.

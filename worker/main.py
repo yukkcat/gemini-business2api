@@ -88,9 +88,10 @@ async def main() -> None:
     # This import triggers ConfigManager.__init__ which calls storage
     from worker.config import config
     logger.info(
-        "[INIT] config loaded — scheduled_refresh_enabled=%s, interval=%d min, headless=%s, window=%dh",
+        "[INIT] config loaded — scheduled_refresh_enabled=%s, interval=%d min, browser_mode=%s, headless=%s, window=%dh",
         config.retry.scheduled_refresh_enabled,
         config.retry.scheduled_refresh_interval_minutes,
+        config.basic.browser_mode,
         config.basic.browser_headless,
         config.basic.refresh_window_hours,
     )
@@ -108,6 +109,8 @@ async def main() -> None:
         env_overrides.append(f"REFRESH_INTERVAL_MINUTES={os.getenv('REFRESH_INTERVAL_MINUTES')}")
     if os.getenv("REFRESH_WINDOW_HOURS") is not None:
         env_overrides.append(f"REFRESH_WINDOW_HOURS={os.getenv('REFRESH_WINDOW_HOURS')}")
+    if os.getenv("BROWSER_MODE") is not None:
+        env_overrides.append(f"BROWSER_MODE={os.getenv('BROWSER_MODE')}")
     if os.getenv("BROWSER_HEADLESS") is not None:
         env_overrides.append(f"BROWSER_HEADLESS={os.getenv('BROWSER_HEADLESS')}")
     if os.getenv("PROXY_FOR_AUTH") is not None:

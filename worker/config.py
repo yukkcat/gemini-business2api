@@ -34,6 +34,14 @@ def _parse_bool(value, default: bool) -> bool:
     return default
 
 
+def _normalize_browser_mode(value, default: str = "normal") -> str:
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in ("normal", "silent", "headless"):
+            return lowered
+    return default
+
+
 # ==================== Config models ====================
 
 class BasicConfig(BaseModel):
@@ -55,7 +63,8 @@ class BasicConfig(BaseModel):
     gptmail_api_key: str = Field(default="gpt-test", description="GPTMail API key")
     gptmail_verify_ssl: bool = Field(default=True, description="GPTMail SSL校验")
     gptmail_domain: str = Field(default="", description="GPTMail 邮箱域名")
-    browser_headless: bool = Field(default=False, description="浏览器无头模式")
+    browser_mode: str = Field(default="normal", description="浏览器模式：normal / silent / headless")
+    browser_headless: bool = Field(default=False, description="兼容字段：是否无头模式")
     refresh_window_hours: int = Field(default=1, ge=0, le=24, description="过期刷新窗口（小时）")
     register_domain: str = Field(default="", description="注册账号使用的邮箱域名（DuckMail专用）")
     register_default_count: int = Field(default=1, ge=1, le=20, description="默认注册账号数量")
@@ -104,6 +113,11 @@ class ConfigManager:
             if isinstance(old_proxy_for_auth_bool, bool) and old_proxy_for_auth_bool:
                 proxy_for_auth = old_proxy
 
+        legacy_headless = _parse_bool(basic_data.get("browser_headless"), False)
+        default_browser_mode = "headless" if legacy_headless else "normal"
+        browser_mode = _normalize_browser_mode(basic_data.get("browser_mode"), default_browser_mode)
+        browser_headless = browser_mode == "headless"
+
         basic_config = BasicConfig(
             proxy_for_auth=str(proxy_for_auth or "").strip(),
             duckmail_base_url=basic_data.get("duckmail_base_url") or "https://api.duckmail.sbs",
@@ -122,7 +136,8 @@ class ConfigManager:
             gptmail_api_key=str(basic_data.get("gptmail_api_key") or "").strip(),
             gptmail_verify_ssl=_parse_bool(basic_data.get("gptmail_verify_ssl"), True),
             gptmail_domain=str(basic_data.get("gptmail_domain") or "").strip(),
-            browser_headless=_parse_bool(basic_data.get("browser_headless"), False),
+            browser_mode=browser_mode,
+            browser_headless=browser_headless,
             refresh_window_hours=int(basic_data.get("refresh_window_hours", 1)),
             register_domain=str(basic_data.get("register_domain") or "").strip(),
             register_default_count=max(1, int(basic_data.get("register_default_count", 1))),
@@ -178,11 +193,28 @@ class ConfigManager:
             except ValueError:
                 logger.warning("[CONFIG] invalid REFRESH_WINDOW_HOURS=%r, ignored", env_window)
 
+        env_browser_mode = os.getenv("BROWSER_MODE")
+        if env_browser_mode is not None:
+            mode = _normalize_browser_mode(env_browser_mode, self._config.basic.browser_mode)
+            if mode != env_browser_mode.strip().lower():
+                logger.warning(
+                    "[CONFIG] invalid BROWSER_MODE=%r, fallback to %s",
+                    env_browser_mode,
+                    mode,
+                )
+            self._config.basic.browser_mode = mode
+            self._config.basic.browser_headless = mode == "headless"
+            logger.info("[CONFIG] env override: BROWSER_MODE=%s", mode)
+
         env_headless = os.getenv("BROWSER_HEADLESS")
         if env_headless is not None:
-            val = _parse_bool(env_headless, self._config.basic.browser_headless)
-            self._config.basic.browser_headless = val
-            logger.info("[CONFIG] env override: BROWSER_HEADLESS=%s", val)
+            if env_browser_mode is not None:
+                logger.info("[CONFIG] BROWSER_HEADLESS ignored because BROWSER_MODE is set")
+            else:
+                val = _parse_bool(env_headless, self._config.basic.browser_headless)
+                self._config.basic.browser_headless = val
+                self._config.basic.browser_mode = "headless" if val else "normal"
+                logger.info("[CONFIG] env override: BROWSER_HEADLESS=%s", val)
 
         env_proxy = os.getenv("PROXY_FOR_AUTH")
         if env_proxy is not None:

@@ -91,6 +91,7 @@ class RefreshService:
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._is_polling = False
         self._current_task: Optional[RefreshTask] = None
+        self._round_lock = asyncio.Lock()
         self._log_lock = threading.Lock()
         self._cancel_hooks: Dict[str, List[Callable[[], None]]] = {}
         self._cancel_hooks_lock = threading.Lock()
@@ -540,6 +541,97 @@ class RefreshService:
 
         return task
 
+    async def _run_refresh_round(self) -> dict:
+        """Run one full refresh round and return a summary."""
+        summary = {
+            "deleted_expired": 0,
+            "expiring_count": 0,
+            "task_status": "idle",
+            "success_count": 0,
+            "fail_count": 0,
+            "auto_register_attempted": False,
+        }
+
+        if config.retry.delete_expired_accounts:
+            try:
+                summary["deleted_expired"] = self._delete_expired_accounts()
+            except Exception as exc:
+                logger.warning("[REFRESH] expired account deletion failed: %s", exc)
+
+        expiring = self._get_expiring_accounts()
+        summary["expiring_count"] = len(expiring)
+        if not expiring:
+            logger.info("[REFRESH] no accounts need refresh this round")
+        else:
+            logger.info(f"[REFRESH] {len(expiring)} accounts to refresh in one task")
+            try:
+                task = await self._run_single_batch(expiring)
+                summary["task_status"] = task.status.value
+                summary["success_count"] = task.success_count
+                summary["fail_count"] = task.fail_count
+                logger.info(
+                    "[REFRESH] refresh round complete (success: %s, fail: %s)",
+                    task.success_count,
+                    task.fail_count,
+                )
+            except Exception as exc:
+                summary["task_status"] = "error"
+                logger.warning("[REFRESH] refresh round error: %s", exc)
+
+        if config.retry.auto_register_enabled:
+            summary["auto_register_attempted"] = True
+            try:
+                self._auto_register_if_needed()
+            except Exception as exc:
+                logger.warning("[REFRESH] auto registration failed: %s", exc)
+
+        return summary
+
+    async def run_once(self, trigger: str = "manual", reload_config: bool = True, allow_when_disabled: bool = True) -> dict:
+        """
+        Run exactly one refresh round.
+
+        Returns a summary dict:
+          - trigger
+          - skipped (bool)
+          - reason
+          - round fields from _run_refresh_round()
+        """
+        summary = {
+            "trigger": trigger,
+            "skipped": False,
+            "reason": "",
+            "deleted_expired": 0,
+            "expiring_count": 0,
+            "task_status": "idle",
+            "success_count": 0,
+            "fail_count": 0,
+            "auto_register_attempted": False,
+        }
+
+        if reload_config:
+            try:
+                config_manager.reload()
+            except Exception as exc:
+                logger.warning("[REFRESH] config reload failed before run_once: %s", exc)
+
+        if not allow_when_disabled and not config.retry.scheduled_refresh_enabled:
+            summary["skipped"] = True
+            summary["reason"] = "scheduled refresh disabled"
+            logger.debug("[REFRESH] run_once skipped because scheduled refresh is disabled")
+            return summary
+
+        if self._round_lock.locked():
+            summary["skipped"] = True
+            summary["reason"] = "refresh round already running"
+            logger.warning("[REFRESH] run_once skipped: another round is already running")
+            return summary
+
+        async with self._round_lock:
+            round_summary = await self._run_refresh_round()
+            summary.update(round_summary)
+            return summary
+
     # ---- cron scheduling ----
 
     @staticmethod
@@ -637,31 +729,11 @@ class RefreshService:
                 if not self._is_polling:
                     break
 
-                # Step 1: Delete expired accounts if enabled
-                if config.retry.delete_expired_accounts:
-                    try:
-                        self._delete_expired_accounts()
-                    except Exception as exc:
-                        logger.warning(f"[REFRESH] expired account deletion failed: {exc}")
-
-                # Step 2: Get all expiring accounts and refresh them
-                expiring = self._get_expiring_accounts()
-                if not expiring:
-                    logger.info("[REFRESH] no accounts need refresh this round")
-                else:
-                    logger.info(f"[REFRESH] {len(expiring)} accounts to refresh in one task")
-                    try:
-                        task = await self._run_single_batch(expiring)
-                        logger.info(f"[REFRESH] refresh round complete (success: {task.success_count}, fail: {task.fail_count})")
-                    except Exception as exc:
-                        logger.warning(f"[REFRESH] refresh round error: {exc}")
-
-                # Step 3: Auto-register new accounts if below minimum
-                if config.retry.auto_register_enabled:
-                    try:
-                        self._auto_register_if_needed()
-                    except Exception as exc:
-                        logger.warning(f"[REFRESH] auto registration failed: {exc}")
+                await self.run_once(
+                    trigger="scheduled",
+                    reload_config=False,
+                    allow_when_disabled=False,
+                )
 
         except asyncio.CancelledError:
             logger.info("[REFRESH] polling stopped")

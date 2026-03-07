@@ -323,3 +323,25 @@ This is the recommended setup for:
 
 - Remote deployment: `beta` (public/admin service)
 - Local machine: `refresh-worker` (browser execution node)
+
+## CLI (Chinese interactive mode)
+
+For local operation, you can use the CLI instead of only daemon mode:
+
+```bash
+python -m worker.cli
+```
+
+Useful subcommands:
+
+- `python -m worker.cli once` : run one refresh round immediately
+- `python -m worker.cli doctor` : print config + test remote connectivity
+- `python -m worker.cli wizard` : write remote-mode values into `.env`
+- `python -m worker.cli poll` : start polling in foreground
+
+Docker keeps using daemon mode (`python -m worker.main`) by default.
+If you need manual trigger inside container:
+
+```bash
+docker compose exec refresh-worker python -m worker.cli once
+```

@@ -417,11 +417,16 @@ class GeminiAutomation:
         current_url = page.url
         self._log("info", f"📍 验证后 URL: {current_url}")
 
-        # 检查是否还停留在验证码页面（说明提交失败）
+        # 检查是否还停留在验证码页面（说明提交失败），先做一次刷新+重试兜底
         if "verify-oob-code" in current_url:
-            self._log("error", "❌ 验证码提交失败")
-            self._save_screenshot(page, "verification_submit_failed")
-            return {"success": False, "error": "verification code submission failed"}
+            self._log("warning", "⚠️ 验证码提交后仍停留在验证页，尝试刷新并重试一次...")
+            if self._recover_verification_page(page, mail_client, poll_since_time):
+                current_url = page.url
+                self._log("info", f"✅ 验证页恢复成功，当前 URL: {current_url}")
+            else:
+                self._log("error", "❌ 验证码提交失败")
+                self._save_screenshot(page, "verification_submit_failed")
+                return {"success": False, "error": "verification code submission failed"}
 
         # Step 8: 处理协议页面（如果有）
         self._handle_agreement_page(page)
@@ -886,6 +891,59 @@ class GeminiAutomation:
                 return True
             time.sleep(1)
         return False
+
+    def _recover_verification_page(self, page, mail_client, poll_since_time: datetime) -> bool:
+        """验证码提交后仍在 verify 页面时的兜底恢复流程。"""
+        try:
+            page.refresh()
+            time.sleep(random.uniform(2, 4))
+        except Exception:
+            pass
+
+        # 刷新后可能已经成功跳转
+        if self._wait_for_business_params(page, timeout=12):
+            return True
+
+        if "verify-oob-code" not in (page.url or ""):
+            return self._wait_for_business_params(page, timeout=12)
+
+        # 仍停留在验证页，尝试重发一封新的验证码再提交一次
+        if not self._click_resend_code_button(page):
+            self._log("warning", "⚠️ 恢复流程：未找到重发按钮")
+            return False
+
+        retry_timeout = 25 if self._last_send_confidence == "confirmed" else 15
+        self._log(
+            "info",
+            f"📬 恢复流程：等待重发验证码 (窗口 {retry_timeout}s, 发送状态={self._last_send_confidence})",
+        )
+        new_code = mail_client.poll_for_code(timeout=retry_timeout, interval=5, since_time=poll_since_time)
+        if not new_code:
+            self._log("warning", "⚠️ 恢复流程：重发后未收到新验证码")
+            return False
+
+        code_input = self._wait_for_code_input(page, timeout=10)
+        if not code_input:
+            self._log("warning", "⚠️ 恢复流程：验证码输入框不可用")
+            return False
+
+        self._log("info", f"✅ 恢复流程：收到重发验证码 {new_code}")
+        if not self._simulate_human_input(code_input, new_code):
+            code_input.input(new_code, clear=True)
+            time.sleep(random.uniform(0.4, 0.8))
+
+        code_input.input("\n")
+        time.sleep(random.uniform(1, 2))
+
+        if "verify-oob-code" in (page.url or ""):
+            verify_btn = self._find_verify_button(page)
+            if verify_btn:
+                try:
+                    verify_btn.click()
+                except Exception:
+                    pass
+
+        return self._wait_for_business_params(page, timeout=20)
 
     def _handle_username_setup(self, page, is_new_account: bool = False) -> bool:
         """处理用户名设置页面（is_new_account=True 时启用按钮兜底和延长超时）"""

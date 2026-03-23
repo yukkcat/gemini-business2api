@@ -4,8 +4,7 @@ Cloudflare Temp Email client (cfmail provider).
 API style (cloudflare_temp_email):
 - GET  /open_api/settings
 - POST /admin/new_address
-- GET  /api/mails
-- GET  /api/mail/:mail_id
+- GET  /admin/mails?address=<addr>
 """
 
 import random
@@ -179,13 +178,17 @@ class CloudflareMailClient:
             return ""
 
     def fetch_verification_code(self, since_time: Optional[datetime] = None) -> Optional[str]:
-        if not self.jwt_token:
-            self._log("error", "❌ 缺少 JWT token，无法获取邮件")
+        if not self.email:
+            self._log("error", "❌ 缺少邮箱地址，无法获取邮件")
             return None
 
         try:
             self._log("info", "📬 正在拉取 CFMail 邮件列表...")
-            res = self._request("GET", f"{self.base_url}/api/mails", params={"limit": 20, "offset": 0})
+            res = self._request(
+                "GET",
+                f"{self.base_url}/admin/mails",
+                params={"limit": 20, "offset": 0, "address": self.email},
+            )
             if res.status_code != 200:
                 self._log("error", f"❌ 获取邮件列表失败: HTTP {res.status_code}")
                 return None
@@ -218,36 +221,37 @@ class CloudflareMailClient:
                                 msg_time = datetime.fromtimestamp(ts)
                             else:
                                 import re
+                                from datetime import timezone, timedelta
                                 normalized = re.sub(r"(\.\d{6})\d+", r"\1", str(raw_time))
-                                msg_time = datetime.fromisoformat(
+                                parsed = datetime.fromisoformat(
                                     normalized.replace("Z", "+00:00")
-                                ).astimezone().replace(tzinfo=None)
+                                )
+                                # cfmail created_at is UTC without tz marker;
+                                # treat naive timestamps as UTC and convert to local
+                                if parsed.tzinfo is None:
+                                    parsed = parsed.replace(tzinfo=timezone.utc)
+                                msg_time = parsed.astimezone().replace(tzinfo=None)
                             if msg_time < since_time:
                                 continue
                         except Exception:
                             pass
 
+                # admin/mails returns `raw` (RFC822) directly in list
+                raw_content = msg.get("raw") or ""
+                content = self._extract_body_from_raw(raw_content)
+                if not content and raw_content:
+                    content = raw_content
+
                 summary = (msg.get("subject") or "") + (msg.get("text") or "") + (msg.get("html") or "")
-                if summary:
-                    code = extract_verification_code(summary)
+                searchable = content or summary
+                if searchable:
+                    code = extract_verification_code(searchable)
                     if code:
                         self._log("info", f"✅ 找到验证码: {code}")
                         return code
-
-                self._log("info", f"🔍 正在读取邮件 {idx}/{len(messages)} 详情...")
-                detail_res = self._request("GET", f"{self.base_url}/api/mail/{msg_id}")
-                if detail_res.status_code != 200:
-                    self._log("warning", f"⚠️ 读取邮件详情失败: HTTP {detail_res.status_code}")
-                    continue
-
-                detail = detail_res.json() if detail_res.content else {}
-                content = self._extract_body_from_raw(detail.get("raw") or "")
-                if content:
-                    code = extract_verification_code(content)
-                    if code:
-                        self._log("info", f"✅ 找到验证码: {code}")
-                        return code
-                    self._log("info", f"❌ 邮件 {idx} 中未找到验证码")
+                    self._log("info", f"❌ 邮件 {idx} 中未找到验证码 (内容长度: {len(searchable)})")
+                else:
+                    self._log("warning", f"⚠️ 邮件 {idx} 无任何可解析内容")
 
             self._log("warning", "⚠️ 所有邮件中均未找到验证码")
             return None

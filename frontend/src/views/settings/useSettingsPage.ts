@@ -272,7 +272,7 @@ export function useSettingsPage() {
     isSaving.value = true
 
     try {
-      const payload = JSON.parse(JSON.stringify(localSettings.value)) as Settings
+      const payload = normalizeSettings(JSON.parse(JSON.stringify(localSettings.value)) as Settings)
       syncRefreshMirrors(payload)
       await settingsStore.updateSettings(payload)
       toast.success('设置保存成功')

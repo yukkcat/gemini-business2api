@@ -33,6 +33,7 @@ export function useDashboardPage() {
   type DashboardRangesState = Record<ChartType, TimeRange>
 
   const DASHBOARD_RANGES_STORAGE_KEY = 'dashboard:chart-ranges:v1'
+  const DASHBOARD_AUTO_REFRESH_MS = 15000
 
   // 时间范围选择
   const timeRanges = [
@@ -218,6 +219,7 @@ export function useDashboardPage() {
   const chartsBootstrapped = ref(false)
   const dashboardDataReady = ref(false)
   let chartBootstrapTimer: number | null = null
+  let dashboardRefreshTimer: number | null = null
   const modelLayoutIsMobile = ref<boolean | null>(null)
 
   function bindResizeListener() {
@@ -256,22 +258,30 @@ export function useDashboardPage() {
     ref: HTMLDivElement | null,
     key: ChartKey,
     updateFn: (mode?: RenderMode) => void
-  ) {
+  ): boolean {
     const echarts = (window as any).echarts as { init: (el: HTMLElement) => ChartInstance } | undefined
-    if (!echarts || !ref) return
+    if (!echarts || !ref) return false
+    if (charts[key]) return true
     charts[key] = echarts.init(ref)
     updateFn('initial')
+    return true
   }
 
   function bootstrapCharts() {
     if (chartsBootstrapped.value) return
-    initChart(trendChartRef.value, 'trend', updateTrendChart)
-    initChart(modelChartRef.value, 'model', updateModelChart)
-    initChart(successRateChartRef.value, 'successRate', updateSuccessRateChart)
-    initChart(hourlyRequestsChartRef.value, 'hourlyRequests', updateHourlyRequestsChart)
-    initChart(modelRankChartRef.value, 'modelRank', updateModelRankChart)
-    initChart(responseTimeChartRef.value, 'responseTime', updateResponseTimeChart)
-    chartsBootstrapped.value = true
+    const readyStates = [
+      initChart(trendChartRef.value, 'trend', updateTrendChart),
+      initChart(modelChartRef.value, 'model', updateModelChart),
+      initChart(successRateChartRef.value, 'successRate', updateSuccessRateChart),
+      initChart(hourlyRequestsChartRef.value, 'hourlyRequests', updateHourlyRequestsChart),
+      initChart(modelRankChartRef.value, 'modelRank', updateModelRankChart),
+      initChart(responseTimeChartRef.value, 'responseTime', updateResponseTimeChart),
+    ]
+    chartsBootstrapped.value = readyStates.every(Boolean)
+
+    if (!chartsBootstrapped.value) {
+      scheduleChartBootstrap(160)
+    }
   }
 
   function scheduleChartBootstrap(delayMs = 80) {
@@ -301,27 +311,34 @@ export function useDashboardPage() {
   }
 
   onMounted(async () => {
-    await preloadInitialDashboardData()
+    await refreshDashboardData({ force: true })
 
     scheduleChartBootstrap()
     bindResizeListener()
+    startDashboardAutoRefresh()
   })
 
   onActivated(() => {
     bindResizeListener()
-    if (!dashboardDataReady.value) return
+    startDashboardAutoRefresh()
+    if (!dashboardDataReady.value) {
+      void refreshDashboardData({ force: true })
+      return
+    }
     if (chartsBootstrapped.value) {
       requestAnimationFrame(() => {
         handleResize()
         replayChartIntro()
       })
-      return
+    } else {
+      scheduleChartBootstrap(0)
     }
-    scheduleChartBootstrap(0)
+    void refreshDashboardData({ force: true, syncCharts: true })
   })
 
   onDeactivated(() => {
     unbindResizeListener()
+    stopDashboardAutoRefresh()
     if (chartBootstrapTimer) {
       window.clearTimeout(chartBootstrapTimer)
       chartBootstrapTimer = null
@@ -330,6 +347,7 @@ export function useDashboardPage() {
 
   onBeforeUnmount(() => {
     unbindResizeListener()
+    stopDashboardAutoRefresh()
     if (chartBootstrapTimer) window.clearTimeout(chartBootstrapTimer)
     Object.values(charts).forEach(chart => chart?.dispose())
   })
@@ -435,7 +453,39 @@ export function useDashboardPage() {
     }
   }
 
-  async function getOverview(timeRange: string) {
+  function getActiveRanges() {
+    return Array.from(
+      new Set<string>([
+        '24h',
+        timeRangeHourlyRequests.value,
+        timeRangeTrend.value,
+        timeRangeSuccessRate.value,
+        timeRangeModel.value,
+        timeRangeModelRank.value,
+        timeRangeResponseTime.value,
+      ]),
+    )
+  }
+
+  function stopDashboardAutoRefresh() {
+    if (dashboardRefreshTimer !== null) {
+      window.clearInterval(dashboardRefreshTimer)
+      dashboardRefreshTimer = null
+    }
+  }
+
+  function startDashboardAutoRefresh() {
+    stopDashboardAutoRefresh()
+    dashboardRefreshTimer = window.setInterval(() => {
+      void refreshDashboardData({ force: true, syncCharts: true })
+    }, DASHBOARD_AUTO_REFRESH_MS)
+  }
+
+  async function getOverview(timeRange: string, options: { force?: boolean } = {}) {
+    if (options.force) {
+      overviewCache.delete(timeRange)
+    }
+
     const cached = overviewCache.get(timeRange)
     if (cached) return cached
 
@@ -514,21 +564,27 @@ export function useDashboardPage() {
     }
   }
 
-  async function preloadInitialDashboardData() {
-    try {
-      const initialRanges = Array.from(
-        new Set<string>([
-          '24h',
-          timeRangeHourlyRequests.value,
-          timeRangeTrend.value,
-          timeRangeSuccessRate.value,
-          timeRangeModel.value,
-          timeRangeModelRank.value,
-          timeRangeResponseTime.value,
-        ])
-      )
+  function refreshRenderedCharts(mode: RenderMode = 'refresh') {
+    updateHourlyRequestsChart(mode)
+    updateTrendChart(mode)
+    updateSuccessRateChart(mode)
+    updateModelChart(mode)
+    updateModelRankChart(mode)
+    updateResponseTimeChart(mode)
+  }
 
-      await Promise.all(initialRanges.map((timeRange) => getOverview(timeRange)))
+  async function refreshDashboardData(
+    options: {
+      force?: boolean
+      syncCharts?: boolean
+    } = {},
+  ) {
+    try {
+      const activeRanges = getActiveRanges()
+
+      await Promise.all(
+        activeRanges.map((timeRange) => getOverview(timeRange, { force: options.force })),
+      )
 
       const accountOverview = overviewCache.get('24h')
       if (accountOverview) {
@@ -539,8 +595,12 @@ export function useDashboardPage() {
         const overview = overviewCache.get(getChartRange(chartType))
         if (overview) applyOverviewToChartData(chartType, overview)
       })
+
+      if (options.syncCharts && chartsBootstrapped.value) {
+        refreshRenderedCharts()
+      }
     } catch (error) {
-      console.error('Failed to preload dashboard data:', error)
+      console.error('Failed to refresh dashboard data:', error)
     } finally {
       dashboardDataReady.value = true
     }

@@ -8,15 +8,19 @@ from fastapi import FastAPI, Request
 
 from app.api.routers import (
     AccountRouteDeps,
+    ChatRouteDeps,
     DashboardRouteDeps,
     GalleryRouteDeps,
+    ImageRouteDeps,
     LogRouteDeps,
     PublicRouteDeps,
     SettingsRouteDeps,
     SystemRouteDeps,
     register_account_routes,
+    register_chat_routes,
     register_dashboard_routes,
     register_gallery_routes,
+    register_image_routes,
     register_log_routes,
     register_public_routes,
     register_settings_routes,
@@ -26,19 +30,23 @@ from app.api.routers import (
 
 @dataclass(frozen=True)
 class RouteBootstrapDeps:
+    api_key: Callable[[], str]
     admin_key: Callable[[], str]
     apply_runtime_state: Callable[[dict[str, Any]], None]
     build_retry_policy: Callable[[], Any]
     bulk_delete_accounts: Callable[..., tuple[Any, int, list[str]]]
     bulk_update_account_disabled_status: Callable[[list[str], bool, Any], tuple[int, list[str]]]
+    chat_handler: Callable[..., Awaitable[dict[str, Any]]]
     config_manager: Any
     create_http_client: Callable[[str | None], Any]
     delete_account: Callable[..., Any]
     format_account_expiration: Callable[[Any], tuple[str, str, str]]
     get_config: Callable[[], Any]
+    get_base_url: Callable[[Request], str]
     get_global_stats: Callable[[], dict[str, Any]]
     get_http_client: Callable[[], Any]
     get_log_buffer: Callable[[], Any]
+    get_model_ids: Callable[[], list[str]]
     get_multi_account_mgr: Callable[[], Any]
     get_retry_policy: Callable[[], Any]
     get_runtime_state: Callable[[], dict[str, Any]]
@@ -56,6 +64,7 @@ class RouteBootstrapDeps:
     parse_proxy_setting: Callable[[str], tuple[str | None, str | None]]
     require_login: Callable[..., Callable]
     save_account_cooldown_state: Callable[[str, Any], Awaitable[Any]]
+    save_image_file: Callable[[bytes, str, str, str, str, str], str]
     save_stats: Callable[[dict[str, Any]], Awaitable[None]]
     scan_media_files: Callable[[], list[dict[str, Any]]]
     set_multi_account_mgr: Callable[[Any], None]
@@ -64,10 +73,21 @@ class RouteBootstrapDeps:
     update_account_disabled_status: Callable[[str, bool, Any], Any]
     update_accounts_config: Callable[..., Any]
     uptime_tracker: Any
+    verify_api_key: Callable[[str, str | None], Any]
     video_dir: str
 
 
 def register_http_routes(app: FastAPI, deps: RouteBootstrapDeps) -> None:
+    register_chat_routes(
+        app,
+        ChatRouteDeps(
+            api_key=deps.api_key,
+            chat_handler=deps.chat_handler,
+            get_model_ids=deps.get_model_ids,
+            verify_api_key=deps.verify_api_key,
+        ),
+    )
+
     register_dashboard_routes(
         app,
         DashboardRouteDeps(
@@ -124,6 +144,21 @@ def register_http_routes(app: FastAPI, deps: RouteBootstrapDeps) -> None:
             require_login=deps.require_login,
             scan_media_files=deps.scan_media_files,
             video_dir=deps.video_dir,
+        ),
+    )
+
+    register_image_routes(
+        app,
+        ImageRouteDeps(
+            api_key=deps.api_key,
+            chat_handler=deps.chat_handler,
+            config_manager=deps.config_manager,
+            get_base_url=deps.get_base_url,
+            get_http_client=deps.get_http_client,
+            image_dir=deps.image_dir,
+            logger=deps.logger,
+            save_image_file=deps.save_image_file,
+            verify_api_key=deps.verify_api_key,
         ),
     )
 

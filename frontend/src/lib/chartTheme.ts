@@ -65,9 +65,14 @@ export function filterValidModels(modelRequests: Record<string, number[]>): Reco
 
 const textStyle = {
   fontFamily: 'Noto Sans SC, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
-  color: '#6b6b6b',
+  color: '#64748b',
   fontSize: 11,
 }
+
+const chartTextColor = '#475569'
+const chartBorderColor = '#dbe4ee'
+const chartGridColor = '#e8eef5'
+const chartSoftTextColor = '#94a3b8'
 
 const gridConfig = {
   left: 24,
@@ -78,20 +83,21 @@ const gridConfig = {
 }
 
 const tooltipConfig = {
-  backgroundColor: 'rgba(255, 255, 255, 0.95)',
-  borderColor: '#e5e5e5',
+  backgroundColor: 'rgba(255, 255, 255, 0.98)',
+  borderColor: chartBorderColor,
   borderWidth: 1,
   textStyle: {
-    color: '#1a1a1a',
+    color: chartTextColor,
     fontSize: 12,
   },
   padding: [8, 12],
-  extraCssText: 'border-radius: 8px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);',
+  extraCssText: 'border-radius: 10px; box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);',
 }
 
 const legendConfig = {
   textStyle: {
     ...textStyle,
+    color: chartTextColor,
     fontSize: 11,
   },
   itemWidth: 14,
@@ -99,34 +105,12 @@ const legendConfig = {
   itemGap: 16,
 }
 
-function buildRichLegendKey(index: number) {
-  return `legend_model_${index}`
-}
-
 export function createModelLegendConfig(modelNames: string[]) {
-  const rich = Object.fromEntries(
-    modelNames.map((modelName, index) => [
-      buildRichLegendKey(index),
-      {
-        color: getModelColor(modelName),
-        fontSize: 11,
-        fontWeight: 600,
-      },
-    ])
-  )
-  const legendKeyByName = new Map(
-    modelNames.map((modelName, index) => [modelName, buildRichLegendKey(index)])
-  )
-
   return {
     data: modelNames,
-    formatter: (name: string) => {
-      const richKey = legendKeyByName.get(name)
-      return richKey ? `{${richKey}|${name}}` : name
-    },
     textStyle: {
       ...legendConfig.textStyle,
-      rich,
+      color: chartTextColor,
     },
   }
 }
@@ -145,7 +129,7 @@ export function getLineChartTheme() {
       axisPointer: {
         type: 'line',
         lineStyle: {
-          color: '#d4d4d4',
+          color: chartSoftTextColor,
           type: 'dashed',
         },
       },
@@ -161,7 +145,7 @@ export function getLineChartTheme() {
       boundaryGap: false,
       axisLine: {
         lineStyle: {
-          color: '#d4d4d4',
+          color: chartBorderColor,
         },
       },
       axisTick: {
@@ -186,7 +170,7 @@ export function getLineChartTheme() {
       },
       splitLine: {
         lineStyle: {
-          color: '#e5e5e5',
+          color: chartGridColor,
           type: 'solid',
         },
       },
@@ -237,14 +221,14 @@ export function getPieChartTheme(isMobile = false) {
       label: {
         show: true,
         fontSize: 11,
-        color: '#6b6b6b',
+        color: textStyle.color,
       },
       labelLine: {
         show: true,
         length: 12,
         length2: 10,
         lineStyle: {
-          color: '#d4d4d4',
+          color: chartBorderColor,
         },
       },
       itemStyle: {
@@ -257,6 +241,7 @@ export function getPieChartTheme(isMobile = false) {
           show: true,
           fontSize: 13,
           fontWeight: 'bold',
+          color: chartTextColor,
         },
       },
     },

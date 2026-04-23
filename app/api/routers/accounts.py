@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 
 from app.services import (
     bulk_delete_accounts_payload,
@@ -42,11 +42,24 @@ class AccountRouteDeps:
 def register_account_routes(app: FastAPI, deps: AccountRouteDeps) -> None:
     @app.get("/admin/accounts")
     @deps.require_login()
-    async def admin_get_accounts(request: Request):
-        return get_accounts_payload(
-            deps.get_multi_account_mgr(),
-            deps.format_account_expiration,
-        )
+    async def admin_get_accounts(
+        request: Request,
+        page: int = Query(1, ge=1),
+        page_size: int = Query(50, ge=1, le=200),
+        query: str | None = Query(None),
+        status: str = Query("all"),
+    ):
+        try:
+            return get_accounts_payload(
+                deps.get_multi_account_mgr(),
+                deps.format_account_expiration,
+                page=page,
+                page_size=page_size,
+                query=query,
+                status=status,
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
 
     @app.get("/admin/accounts-config")
     @deps.require_login()

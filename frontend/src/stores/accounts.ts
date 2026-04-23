@@ -1,7 +1,13 @@
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
 import { accountsApi } from '@/api'
-import type { AdminAccount, AccountConfigItem } from '@/types/api'
+import type {
+  AccountConfigItem,
+  AccountListStatus,
+  AccountsListParams,
+  AccountsListResponse,
+  AdminAccount,
+} from '@/types/api'
 
 type AccountOpResult = {
   ok: boolean
@@ -16,42 +22,118 @@ type RunOpOptions = {
   refreshAfter?: boolean
 }
 
+const DEFAULT_PAGE_SIZE = 50
+const MATCHING_IDS_PAGE_SIZE = 200
+const MATCHING_IDS_CONCURRENCY = 4
+const LOCK_TIMEOUT_MS = 60000
+
 export const useAccountsStore = defineStore('accounts', () => {
   const accounts = ref<AdminAccount[]>([])
+  const total = ref(0)
+  const currentPage = ref(1)
+  const pageSize = ref(DEFAULT_PAGE_SIZE)
+  const totalPages = ref(1)
+  const currentQuery = ref('')
+  const currentStatus = ref<AccountListStatus>('all')
   const isLoading = ref(false)
   const operatingAccounts = ref<Set<string>>(new Set())
   const batchProgress = ref<{ current: number; total: number } | null>(null)
+  const latestRequestId = ref(0)
 
   const isOperating = computed(() => operatingAccounts.value.size > 0)
 
-  const LOCK_TIMEOUT_MS = 60000
-
-  async function loadAccounts() {
+  async function loadAccounts(params: AccountsListParams = {}) {
+    const nextPage = params.page ?? currentPage.value
+    const nextPageSize = params.pageSize ?? pageSize.value
+    const nextQuery = params.query ?? currentQuery.value
+    const nextStatus = params.status ?? currentStatus.value
+    const requestId = latestRequestId.value + 1
+    latestRequestId.value = requestId
     isLoading.value = true
+
     try {
-      const response = await accountsApi.list()
-      if (Array.isArray(response)) {
-        accounts.value = response
-      } else {
-        accounts.value = response.accounts || []
+      const response = await accountsApi.list({
+        page: nextPage,
+        pageSize: nextPageSize,
+        query: nextQuery,
+        status: nextStatus,
+      })
+
+      if (requestId !== latestRequestId.value) {
+        return response
       }
+
+      accounts.value = Array.isArray(response.accounts) ? response.accounts : []
+      total.value = response.total ?? accounts.value.length
+      currentPage.value = response.page ?? nextPage
+      pageSize.value = response.page_size ?? nextPageSize
+      totalPages.value = response.total_pages ?? Math.max(1, Math.ceil(total.value / pageSize.value))
+      currentQuery.value = response.query ?? nextQuery
+      currentStatus.value = response.status ?? nextStatus
+      return response
     } finally {
-      isLoading.value = false
+      if (requestId === latestRequestId.value) {
+        isLoading.value = false
+      }
     }
   }
 
+  async function refreshAccounts() {
+    return loadAccounts()
+  }
+
+  async function collectMatchingAccountIds(params: Pick<AccountsListParams, 'query' | 'status'> = {}) {
+    const query = params.query ?? currentQuery.value
+    const status = params.status ?? currentStatus.value
+    const firstPage = await accountsApi.list({
+      page: 1,
+      pageSize: MATCHING_IDS_PAGE_SIZE,
+      query,
+      status,
+    })
+
+    const accountIds = new Set((firstPage.accounts ?? []).map((account) => account.id))
+    const lastPage = Math.max(
+      1,
+      firstPage.total_pages ?? Math.ceil((firstPage.total ?? accountIds.size) / MATCHING_IDS_PAGE_SIZE),
+    )
+
+    for (let startPage = 2; startPage <= lastPage; startPage += MATCHING_IDS_CONCURRENCY) {
+      const pageRequests: Promise<AccountsListResponse>[] = []
+      const endPage = Math.min(lastPage, startPage + MATCHING_IDS_CONCURRENCY - 1)
+
+      for (let page = startPage; page <= endPage; page += 1) {
+        pageRequests.push(
+          accountsApi.list({
+            page,
+            pageSize: MATCHING_IDS_PAGE_SIZE,
+            query,
+            status,
+          }),
+        )
+      }
+
+      const pageResponses = await Promise.all(pageRequests)
+      pageResponses.forEach((response) => {
+        response.accounts?.forEach((account) => accountIds.add(account.id))
+      })
+    }
+
+    return Array.from(accountIds)
+  }
+
   const addLocks = (locks: string[]) => {
-    locks.forEach(lock => operatingAccounts.value.add(lock))
+    locks.forEach((lock) => operatingAccounts.value.add(lock))
   }
 
   const releaseLocks = (locks: string[]) => {
-    locks.forEach(lock => operatingAccounts.value.delete(lock))
+    locks.forEach((lock) => operatingAccounts.value.delete(lock))
   }
 
   const buildChunks = (ids: string[], chunkSize: number) => {
     const chunks: string[][] = []
-    for (let i = 0; i < ids.length; i += chunkSize) {
-      chunks.push(ids.slice(i, i + chunkSize))
+    for (let index = 0; index < ids.length; index += chunkSize) {
+      chunks.push(ids.slice(index, index + chunkSize))
     }
     return chunks
   }
@@ -67,14 +149,14 @@ export const useAccountsStore = defineStore('accounts', () => {
   async function runAccountOp(options: RunOpOptions): Promise<AccountOpResult> {
     const accountIds = options.accountIds ?? []
     const lockKeys = options.lockKeys ?? accountIds
-    const chunkSize = options.chunkSize ?? 10
+    const chunkSize = options.chunkSize ?? 50
     const refreshAfter = options.refreshAfter ?? true
 
     if (!lockKeys.length && !accountIds.length) {
       return { ok: true, errors: [] }
     }
 
-    const conflict = lockKeys.filter(id => operatingAccounts.value.has(id))
+    const conflict = lockKeys.filter((id) => operatingAccounts.value.has(id))
     if (conflict.length > 0) {
       throw new Error(`${conflict.length} 个账号正在操作中`)
     }
@@ -91,16 +173,18 @@ export const useAccountsStore = defineStore('accounts', () => {
       const chunks = accountIds.length ? buildChunks(accountIds, chunkSize) : [[]]
       for (const chunk of chunks) {
         const response = await options.request(chunk)
-        if (response && Array.isArray(response.errors) && response.errors.length) {
+        if (response && Array.isArray(response.errors) && response.errors.length > 0) {
           errors.push(...response.errors)
         }
         if (batchProgress.value) {
           batchProgress.value.current += chunk.length
         }
       }
+
       if (refreshAfter) {
-        await loadAccounts()
+        await refreshAccounts()
       }
+
       return { ok: errors.length === 0, errors }
     } finally {
       if (timeoutGuard !== null) {
@@ -142,6 +226,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     if (!accountIds.length) return { ok: true, errors: [] }
     return runAccountOp({
       accountIds,
+      chunkSize: 50,
       request: async (chunk) => accountsApi.bulkEnable(chunk),
     })
   }
@@ -150,6 +235,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     if (!accountIds.length) return { ok: true, errors: [] }
     return runAccountOp({
       accountIds,
+      chunkSize: 50,
       request: async (chunk) => accountsApi.bulkDisable(chunk),
     })
   }
@@ -158,6 +244,7 @@ export const useAccountsStore = defineStore('accounts', () => {
     if (!accountIds.length) return { ok: true, errors: [] }
     return runAccountOp({
       accountIds,
+      chunkSize: 50,
       request: async (chunk) => accountsApi.bulkDelete(chunk),
     })
   }
@@ -173,10 +260,18 @@ export const useAccountsStore = defineStore('accounts', () => {
 
   return {
     accounts,
+    total,
+    currentPage,
+    pageSize,
+    totalPages,
+    currentQuery,
+    currentStatus,
     isLoading,
     isOperating,
     batchProgress,
     loadAccounts,
+    refreshAccounts,
+    collectMatchingAccountIds,
     deleteAccount,
     disableAccount,
     enableAccount,

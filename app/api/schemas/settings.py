@@ -127,3 +127,22 @@ class AdminSettingsPayload(StrictModel):
     session: SessionSettingsPayload
     refresh_settings: RefreshSettingsPayload
     quota_limits: QuotaLimitsSettingsPayload
+
+
+for model in (
+    DuckmailSettingsPayload,
+    MoemailSettingsPayload,
+    FreemailSettingsPayload,
+    GptmailSettingsPayload,
+    CfmailSettingsPayload,
+    BasicSettingsPayload,
+    RetrySettingsPayload,
+    RefreshSettingsPayload,
+    ImageGenerationSettingsPayload,
+    VideoGenerationSettingsPayload,
+    QuotaLimitsSettingsPayload,
+    PublicDisplaySettingsPayload,
+    SessionSettingsPayload,
+    AdminSettingsPayload,
+):
+    model.model_rebuild()

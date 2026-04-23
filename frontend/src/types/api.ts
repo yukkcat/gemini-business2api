@@ -63,8 +63,22 @@ export interface AdminAccount {
   trial_days_remaining?: number | null
 }
 
+export type AccountListStatus = 'all' | AccountStateCode
+
+export interface AccountsListParams {
+  page?: number
+  pageSize?: number
+  query?: string
+  status?: AccountListStatus
+}
+
 export interface AccountsListResponse {
   total: number
+  page: number
+  page_size: number
+  total_pages: number
+  query: string
+  status: AccountListStatus
   accounts: AdminAccount[]
 }
 

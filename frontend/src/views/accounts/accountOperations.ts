@@ -23,9 +23,17 @@ const handleOpResult = (
     toast.success(successMessage)
     return true
   }
+
   const detail = formatOpErrors(result.errors)
-  toast.error(detail ? `${failMessage}（${detail}）` : failMessage)
+  toast.error(detail ? `${failMessage}，${detail}` : failMessage)
   return false
+}
+
+const removeSelectedId = (selectedIds: SelectionRef, accountId: string) => {
+  if (!selectedIds.value.has(accountId)) return
+  const next = new Set(selectedIds.value)
+  next.delete(accountId)
+  selectedIds.value = next
 }
 
 export const createAccountOperations = (
@@ -36,6 +44,7 @@ export const createAccountOperations = (
 ) => {
   const handleBulkEnable = async () => {
     if (!selectedIds.value.size || accountsStore.isOperating) return
+
     try {
       const result = await accountsStore.bulkEnable(Array.from(selectedIds.value))
       if (handleOpResult(toast, result, '批量启用成功', '批量启用失败')) {
@@ -48,6 +57,7 @@ export const createAccountOperations = (
 
   const handleBulkDisable = async () => {
     if (!selectedIds.value.size || accountsStore.isOperating) return
+
     const confirmed = await confirmDialog.ask({
       title: '批量禁用',
       message: '确定要批量禁用选中的账号吗？',
@@ -66,6 +76,7 @@ export const createAccountOperations = (
 
   const handleBulkDelete = async () => {
     if (!selectedIds.value.size || accountsStore.isOperating) return
+
     const confirmed = await confirmDialog.ask({
       title: '批量删除',
       message: '确定要批量删除选中的账号吗？',
@@ -88,10 +99,12 @@ export const createAccountOperations = (
       await handleBulkEnable()
       return
     }
+
     if (action === 'disable') {
       await handleBulkDisable()
       return
     }
+
     if (action === 'delete') {
       await handleBulkDelete()
     }
@@ -99,6 +112,7 @@ export const createAccountOperations = (
 
   const handleEnable = async (accountId: string) => {
     if (accountsStore.isOperating) return
+
     try {
       const result = await accountsStore.enableAccount(accountId)
       handleOpResult(toast, result, '账号已启用', '启用失败')
@@ -109,9 +123,10 @@ export const createAccountOperations = (
 
   const handleDisable = async (accountId: string) => {
     if (accountsStore.isOperating) return
+
     const confirmed = await confirmDialog.ask({
       title: '禁用账号',
-      message: '确定要禁用该账号吗？',
+      message: '确定要禁用这个账号吗？',
     })
     if (!confirmed) return
 
@@ -125,16 +140,19 @@ export const createAccountOperations = (
 
   const handleDelete = async (accountId: string) => {
     if (accountsStore.isOperating) return
+
     const confirmed = await confirmDialog.ask({
       title: '删除账号',
-      message: '确定要删除该账号吗？',
+      message: '确定要删除这个账号吗？',
       confirmText: '删除',
     })
     if (!confirmed) return
 
     try {
       const result = await accountsStore.deleteAccount(accountId)
-      handleOpResult(toast, result, '账号已删除', '删除失败')
+      if (handleOpResult(toast, result, '账号已删除', '删除失败')) {
+        removeSelectedId(selectedIds, accountId)
+      }
     } catch (error: any) {
       toast.error(error.message || '删除失败')
     }

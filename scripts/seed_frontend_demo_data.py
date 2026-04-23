@@ -15,6 +15,7 @@ import random
 import shutil
 import sqlite3
 import string
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -60,7 +61,7 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
             )
             """
         )
-def _build_demo_accounts() -> list[dict]:
+def _build_demo_accounts(count: int) -> list[dict]:
     now = datetime.now(BEIJING_TZ)
 
     def exp(hours: int | None) -> str | None:
@@ -69,13 +70,44 @@ def _build_demo_accounts() -> list[dict]:
         return (now + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
 
     clusters = ["alpha", "beta", "gamma", "delta", "omega", "nova"]
+    providers = ["duckmail", "moemail", "freemail", "gptmail", "cfmail"]
     rows: list[dict] = []
-    template_hours: list[int | None] = [240, 168, 96, 72, 48, 24, 12, 6, 3, -4, -12, None]
 
-    for idx, hours in enumerate(template_hours, 1):
+    for idx in range(1, count + 1):
         cluster = clusters[(idx - 1) % len(clusters)]
-        account_id = f"{cluster}-{200 + idx:03d}"
-        is_disabled = idx in {10, 11}
+        provider = providers[(idx - 1) % len(providers)]
+        account_id = f"{cluster}-{200 + idx:04d}"
+        status_bucket = (idx - 1) % 10
+        hours: int | None = 240
+        is_disabled = False
+        disabled_reason = None
+        quota_cooldowns: dict[str, float] = {}
+
+        if status_bucket == 1:
+            hours = 96
+        elif status_bucket == 2:
+            hours = 2
+        elif status_bucket == 3:
+            hours = -6
+        elif status_bucket == 4:
+            is_disabled = True
+            disabled_reason = "manual_hold"
+            hours = 168
+        elif status_bucket == 5:
+            is_disabled = True
+            disabled_reason = "403 Access Restricted"
+            hours = 168
+        elif status_bucket == 6:
+            hours = 48
+            quota_cooldowns = {"text": time.time() - 300}
+        elif status_bucket == 7:
+            hours = 72
+            quota_cooldowns = {"images": time.time() - 300, "videos": time.time() - 300}
+        elif status_bucket == 8:
+            hours = None
+        elif status_bucket == 9:
+            hours = 12
+
         entry = {
             "id": account_id,
             "secure_c_ses": _rand_token("CSE.AXUaAj", 118),
@@ -84,20 +116,33 @@ def _build_demo_accounts() -> list[dict]:
             "config_id": str(uuid.uuid4()),
             "expires_at": exp(hours),
             "disabled": is_disabled,
-            "disabled_reason": "manual_hold" if is_disabled else None,
-            "trial_end": (now + timedelta(days=max(0, 21 - idx))).strftime("%Y-%m-%d"),
+            "disabled_reason": disabled_reason,
+            "mail_provider": provider,
+            "mail_address": f"{account_id}@mailbox.local",
+            "mail_password": f"mail-{_rand_token('', 10)}",
+            "mail_verify_ssl": True,
+            "trial_end": (now + timedelta(days=max(0, 30 - (idx % 25)))).strftime("%Y-%m-%d"),
+            "quota_cooldowns": quota_cooldowns,
+            "conversation_count": idx % 17,
+            "failure_count": idx % 5,
+            "daily_usage": {
+                "text": idx % 30,
+                "images": idx % 8,
+                "videos": idx % 4,
+            },
+            "daily_usage_date": now.strftime("%Y-%m-%d"),
         }
         rows.append(entry)
 
     return rows
 
 
-def _seed_accounts(conn: sqlite3.Connection, replace: bool) -> int:
+def _seed_accounts(conn: sqlite3.Connection, replace: bool, count: int) -> int:
     current = conn.execute("SELECT COUNT(*) FROM accounts").fetchone()[0]
     if current > 0 and not replace:
         return 0
 
-    rows = _build_demo_accounts()
+    rows = _build_demo_accounts(count)
 
     with conn:
         if replace:
@@ -222,6 +267,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Seed frontend demo data into SQLite")
     parser.add_argument("--db-path", default="data/data.db", help="SQLite db path")
     parser.add_argument("--replace-accounts", action="store_true", help="Replace existing accounts with demo accounts")
+    parser.add_argument("--accounts-count", type=int, default=12, help="How many demo accounts to generate")
     parser.add_argument("--replace-logs", action="store_true", help="Replace existing request logs with demo logs")
     parser.add_argument("--logs-count", type=int, default=2400, help="How many demo request logs to generate")
     parser.add_argument("--seed", type=int, default=20260323, help="Random seed for reproducible demo data")
@@ -245,7 +291,11 @@ def main() -> int:
         _ensure_tables(conn)
 
         summary = SeedSummary()
-        summary.accounts_inserted = _seed_accounts(conn, replace=args.replace_accounts)
+        summary.accounts_inserted = _seed_accounts(
+            conn,
+            replace=args.replace_accounts,
+            count=max(0, args.accounts_count),
+        )
         summary.logs_inserted = _seed_logs(conn, replace=args.replace_logs, count=args.logs_count)
 
         print("[OK] Demo data seeding completed")

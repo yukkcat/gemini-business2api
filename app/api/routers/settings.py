@@ -1,10 +1,8 @@
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Request
 
 from app.api.schemas import AdminSettingsPayload
 from app.services.settings_service import get_settings_payload, update_settings
@@ -26,12 +24,15 @@ class SettingsRouteDeps:
 def register_settings_routes(app: FastAPI, deps: SettingsRouteDeps) -> None:
     @app.get("/admin/settings", response_model=AdminSettingsPayload)
     @deps.require_login()
-    async def admin_get_settings():
+    async def admin_get_settings(request: Request):
         return get_settings_payload(deps.get_config())
 
     @app.put("/admin/settings", response_model=AdminSettingsPayload)
     @deps.require_login()
-    async def admin_update_settings(new_settings: AdminSettingsPayload):
+    async def admin_update_settings(
+        request: Request,
+        new_settings: AdminSettingsPayload = Body(...),
+    ):
         try:
             return await update_settings(new_settings, deps)
         except ValueError as exc:

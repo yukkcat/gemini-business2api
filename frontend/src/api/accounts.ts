@@ -1,14 +1,22 @@
 import apiClient from './client'
 import type {
   AccountsConfigResponse,
+  AccountsListParams,
   AccountsListResponse,
   AccountConfigItem,
 } from '@/types/api'
 
 export const accountsApi = {
   // 获取账户列表
-  list: () =>
-    apiClient.get<never, AccountsListResponse>('/admin/accounts'),
+  list: (params?: AccountsListParams) =>
+    apiClient.get<never, AccountsListResponse>('/admin/accounts', {
+      params: {
+        page: params?.page,
+        page_size: params?.pageSize,
+        query: params?.query,
+        status: params?.status,
+      },
+    }),
 
   // 获取账户配置
   getConfig: () =>

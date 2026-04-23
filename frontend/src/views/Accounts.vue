@@ -57,7 +57,14 @@
 
       <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-          <Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll">
+          <TriStateCheckbox
+            :state="selectionState"
+            :disabled="isSelectingAll || isLoading || filteredAccounts.length === 0"
+            label="全选账号"
+            aria-label="切换账号全选状态"
+            @toggle="toggleSelectAll"
+          />
+          <Checkbox class="hidden" :model-value="allSelected" @update:model-value="toggleSelectAll">
             全选当前结果
           </Checkbox>
           <span class="rounded-full border border-border bg-muted/30 px-3 py-1.5">
@@ -65,6 +72,12 @@
           </span>
           <span class="rounded-full border border-border bg-muted/30 px-3 py-1.5">
             已选 {{ selectedCount }}
+          </span>
+          <span
+            v-if="selectionHint"
+            class="rounded-full border border-primary/20 bg-primary/5 px-3 py-1.5 text-primary"
+          >
+            {{ selectionHint }}
           </span>
           <span
             v-if="batchProgress"
@@ -224,7 +237,12 @@
           <thead class="text-xs uppercase tracking-[0.2em] text-muted-foreground">
             <tr>
               <th class="py-3 pr-4">
-                <Checkbox :model-value="allSelected" @update:model-value="toggleSelectAll" />
+                <TriStateCheckbox
+                  :state="selectionState"
+                  :disabled="isSelectingAll || isLoading || paginatedAccounts.length === 0"
+                  aria-label="切换当前账户选择状态"
+                  @toggle="toggleSelectAll"
+                />
               </th>
               <th class="py-3 pr-6">账号 ID</th>
               <th class="py-3 pr-6">状态</th>
@@ -330,7 +348,7 @@
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-xs text-muted-foreground">每页</span>
           <div class="w-[110px] shrink-0">
-            <SelectMenu v-model="pageSize" :options="pageSizeOptions" />
+            <SelectMenu v-model="pageSize" :options="pageSizeOptions" placement="up" />
           </div>
           <Button size="sm" variant="outline" :disabled="currentPage === 1" @click="currentPage--">
             上一页
@@ -594,6 +612,7 @@ import {
 import AccountBulkBar from '@/components/ai/AccountBulkBar.vue'
 import QuotaBadge from '@/components/QuotaBadge.vue'
 import ModalSectionHeader from '@/components/ui/ModalSectionHeader.vue'
+import TriStateCheckbox from '@/components/ui/TriStateCheckbox.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
 import { useToast } from '@/composables/useToast'
 import { useAccountsStore } from '@/stores/accounts'
@@ -632,6 +651,9 @@ const {
   paginatedAccounts,
   totalPages,
   allSelected,
+  isSelectingAll,
+  selectionHint,
+  selectionState,
   refreshAccounts,
   toggleSelect,
   toggleSelectAll,

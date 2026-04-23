@@ -46,11 +46,103 @@ def _model_copy(model: Any) -> Any:
     return model.copy(deep=True)
 
 
+def _clean_str(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
 def _normalize_browser_mode(browser_mode: str, browser_headless: bool) -> tuple[str, bool]:
-    normalized = str(browser_mode or "").strip().lower()
+    normalized = _clean_str(browser_mode).lower()
     if normalized not in {"normal", "silent", "headless"}:
         normalized = "headless" if browser_headless else "normal"
     return normalized, normalized == "headless"
+
+
+def _normalize_temp_mail_provider(value: str) -> str:
+    normalized = _clean_str(value).lower()
+    if normalized in {"duckmail", "moemail", "freemail", "gptmail", "cfmail"}:
+        return normalized
+    return "duckmail"
+
+
+def _normalize_image_output_format(value: str) -> str:
+    return "url" if _clean_str(value).lower() == "url" else "base64"
+
+
+def _normalize_video_output_format(value: str) -> str:
+    normalized = _clean_str(value).lower()
+    if normalized in {"url", "markdown"}:
+        return normalized
+    return "html"
+
+
+def _normalize_string_list(values: list[str] | None) -> list[str]:
+    normalized: list[str] = []
+    seen: set[str] = set()
+
+    for value in values or []:
+        item = _clean_str(value)
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        normalized.append(item)
+
+    return normalized
+
+
+def _sanitize_settings_payload(payload: AdminSettingsPayload) -> AdminSettingsPayload:
+    sanitized = _model_copy(payload)
+
+    sanitized.basic.api_key = _clean_str(sanitized.basic.api_key)
+    sanitized.basic.base_url = _clean_str(sanitized.basic.base_url)
+    sanitized.basic.proxy_for_chat = _clean_str(sanitized.basic.proxy_for_chat)
+
+    sanitized.retry.rate_limit_cooldown_seconds = sanitized.retry.text_rate_limit_cooldown_seconds
+
+    sanitized.public_display.logo_url = _clean_str(sanitized.public_display.logo_url)
+    sanitized.public_display.chat_url = _clean_str(sanitized.public_display.chat_url)
+
+    sanitized.image_generation.supported_models = _normalize_string_list(
+        sanitized.image_generation.supported_models
+    )
+    sanitized.image_generation.output_format = _normalize_image_output_format(
+        sanitized.image_generation.output_format
+    )
+    sanitized.video_generation.output_format = _normalize_video_output_format(
+        sanitized.video_generation.output_format
+    )
+
+    refresh = sanitized.refresh_settings
+    refresh.proxy_for_auth = _clean_str(refresh.proxy_for_auth)
+    refresh.temp_mail_provider = _normalize_temp_mail_provider(refresh.temp_mail_provider)
+    refresh.browser_mode, refresh.browser_headless = _normalize_browser_mode(
+        refresh.browser_mode,
+        refresh.browser_headless,
+    )
+    refresh.register_domain = _clean_str(refresh.register_domain)
+    refresh.scheduled_refresh_cron = _clean_str(refresh.scheduled_refresh_cron)
+
+    refresh.duckmail.base_url = _clean_str(refresh.duckmail.base_url)
+    refresh.duckmail.api_key = _clean_str(refresh.duckmail.api_key)
+
+    refresh.moemail.base_url = _clean_str(refresh.moemail.base_url)
+    refresh.moemail.api_key = _clean_str(refresh.moemail.api_key)
+    refresh.moemail.domain = _clean_str(refresh.moemail.domain)
+
+    refresh.freemail.base_url = _clean_str(refresh.freemail.base_url)
+    refresh.freemail.jwt_token = _clean_str(refresh.freemail.jwt_token)
+    refresh.freemail.domain = _clean_str(refresh.freemail.domain)
+
+    refresh.gptmail.base_url = _clean_str(refresh.gptmail.base_url)
+    refresh.gptmail.api_key = _clean_str(refresh.gptmail.api_key)
+    refresh.gptmail.domain = _clean_str(refresh.gptmail.domain)
+
+    refresh.cfmail.base_url = _clean_str(refresh.cfmail.base_url)
+    refresh.cfmail.api_key = _clean_str(refresh.cfmail.api_key)
+    refresh.cfmail.domain = _clean_str(refresh.cfmail.domain)
+
+    return sanitized
 
 
 def _build_refresh_settings(current_config: Any) -> RefreshSettingsPayload:
@@ -154,7 +246,8 @@ def get_settings_payload(current_config: Any) -> AdminSettingsPayload:
 
 
 def _build_storage_snapshot(payload: AdminSettingsPayload) -> dict[str, Any]:
-    refresh = _model_copy(payload.refresh_settings)
+    sanitized = _sanitize_settings_payload(payload)
+    refresh = _model_copy(sanitized.refresh_settings)
     browser_mode, browser_headless = _normalize_browser_mode(
         refresh.browser_mode,
         refresh.browser_headless,
@@ -162,9 +255,9 @@ def _build_storage_snapshot(payload: AdminSettingsPayload) -> dict[str, Any]:
     refresh.browser_mode = browser_mode
     refresh.browser_headless = browser_headless
 
-    snapshot = _model_dump(payload)
-    snapshot["basic"] = _model_dump(payload.basic)
-    snapshot["retry"] = _model_dump(payload.retry)
+    snapshot = _model_dump(sanitized)
+    snapshot["basic"] = _model_dump(sanitized.basic)
+    snapshot["retry"] = _model_dump(sanitized.retry)
     snapshot["refresh_settings"] = _model_dump(refresh)
     return snapshot
 

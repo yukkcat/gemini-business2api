@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any, Awaitable, Callable, Protocol
 
 
@@ -19,6 +20,18 @@ class AccountMutationDeps(Protocol):
     set_multi_account_mgr: Callable[[Any], None]
     update_account_disabled_status: Callable[[str, bool, Any], Any]
     update_accounts_config: Callable[..., Any]
+
+
+ACCOUNT_STATE_CODES = {
+    "active",
+    "manual_disabled",
+    "access_restricted",
+    "expired",
+    "expiring_soon",
+    "rate_limited",
+    "quota_limited",
+    "unavailable",
+}
 
 
 def _get_disabled_reason(account_manager: Any, account_config: Any) -> str | None:
@@ -166,12 +179,47 @@ def build_account_entry(
 def get_accounts_payload(
     multi_account_mgr: Any,
     format_account_expiration: Callable[[Any], tuple[str, str, str]],
+    *,
+    page: int = 1,
+    page_size: int = 50,
+    query: str | None = None,
+    status: str | None = None,
 ) -> dict[str, Any]:
-    accounts = [
-        build_account_entry(account_manager, format_account_expiration)
-        for account_manager in multi_account_mgr.accounts.values()
-    ]
-    return {"total": len(accounts), "accounts": accounts}
+    normalized_page = max(1, int(page))
+    normalized_page_size = max(1, min(int(page_size), 200))
+    raw_query = (query or "").strip()
+    normalized_query = raw_query.lower()
+    normalized_status = (status or "all").strip() or "all"
+
+    if normalized_status != "all" and normalized_status not in ACCOUNT_STATE_CODES:
+        raise ValueError(f"Unsupported account status filter: {normalized_status}")
+
+    accounts: list[dict[str, Any]] = []
+    for account_manager in multi_account_mgr.accounts.values():
+        if normalized_query and normalized_query not in account_manager.config.account_id.lower():
+            continue
+
+        account_entry = build_account_entry(account_manager, format_account_expiration)
+        if normalized_status != "all" and account_entry["state"]["code"] != normalized_status:
+            continue
+
+        accounts.append(account_entry)
+
+    total = len(accounts)
+    total_pages = max(1, math.ceil(total / normalized_page_size)) if total else 1
+    current_page = min(normalized_page, total_pages)
+    start = (current_page - 1) * normalized_page_size
+    end = start + normalized_page_size
+
+    return {
+        "total": total,
+        "page": current_page,
+        "page_size": normalized_page_size,
+        "total_pages": total_pages,
+        "query": raw_query,
+        "status": normalized_status,
+        "accounts": accounts[start:end],
+    }
 
 
 def get_accounts_config_payload(load_accounts_from_source: Callable[[], list[Any]]) -> dict[str, Any]:

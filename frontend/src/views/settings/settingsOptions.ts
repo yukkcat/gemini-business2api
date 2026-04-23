@@ -1,7 +1,9 @@
+import { DEFAULT_RETRY_SETTINGS } from './settingsDefaults'
+
 export const DEFAULT_COOLDOWN_HOURS = {
-  text: 2,
-  images: 4,
-  videos: 4,
+  text: DEFAULT_RETRY_SETTINGS.text_rate_limit_cooldown_seconds / 3600,
+  images: DEFAULT_RETRY_SETTINGS.images_rate_limit_cooldown_seconds / 3600,
+  videos: DEFAULT_RETRY_SETTINGS.videos_rate_limit_cooldown_seconds / 3600,
 } as const
 
 export const browserModeOptions = [

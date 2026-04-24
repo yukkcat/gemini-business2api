@@ -68,12 +68,36 @@ def _normalize_tag(value: str) -> str:
     return raw[1:] if raw.lower().startswith("v") else raw
 
 
-def _parse_version_tuple(value: str) -> Tuple[int, ...]:
+def _parse_version_key(value: str) -> Tuple[Tuple[int, ...], int, int, int]:
     normalized = _normalize_tag(value)
-    numbers = re.findall(r"\d+", normalized)
-    if not numbers:
-        return tuple()
-    return tuple(int(item) for item in numbers)
+    if not normalized:
+        return tuple(), -1, -1, -1
+
+    match = re.match(
+        r"^(?P<release>\d+(?:\.\d+)*)(?:[-._]?(?P<pre>[a-zA-Z]+)(?:[-._]?(?P<pre_num>\d+))?)?$",
+        normalized,
+    )
+    if not match:
+        numbers = re.findall(r"\d+", normalized)
+        if not numbers:
+            return tuple(), -1, -1, -1
+        return tuple(int(item) for item in numbers), 1, 99, 0
+
+    release = tuple(int(item) for item in match.group("release").split("."))
+    pre_label = str(match.group("pre") or "").lower()
+    pre_num = int(match.group("pre_num") or 0)
+    if not pre_label:
+        return release, 1, 99, 0
+
+    pre_order = {
+        "dev": 0,
+        "a": 1,
+        "alpha": 1,
+        "b": 2,
+        "beta": 2,
+        "rc": 3,
+    }
+    return release, 0, pre_order.get(pre_label, 0), pre_num
 
 
 def _fetch_latest_tag(repository: str) -> Tuple[str, str]:
@@ -124,7 +148,7 @@ def _fetch_latest_tag_from_git_remote() -> Tuple[str, str]:
     if not tag_names:
         raise RuntimeError("no remote tags found")
 
-    latest = max(tag_names, key=_parse_version_tuple)
+    latest = max(tag_names, key=_parse_version_key)
     return latest, ""
 
 
@@ -150,10 +174,10 @@ def get_update_status(repository: Optional[str] = None) -> Dict[str, object]:
         except Exception as git_exc:
             error = f"{error}; {git_exc}"
 
-    current_tuple = _parse_version_tuple(current["version"])
-    latest_tuple = _parse_version_tuple(latest_version)
-    update_available = bool(latest_tuple and current_tuple and latest_tuple > current_tuple)
-    is_latest = bool(latest_tuple) and not update_available and latest_tuple == current_tuple
+    current_tuple = _parse_version_key(current["version"])
+    latest_tuple = _parse_version_key(latest_version)
+    update_available = bool(latest_tuple[0] and current_tuple[0] and latest_tuple > current_tuple)
+    is_latest = bool(latest_tuple[0]) and not update_available and latest_tuple == current_tuple
 
     return {
         **current,

@@ -7,7 +7,7 @@
   <a href="../README.md">简体中文</a> | <strong>English</strong>
 </p>
 <p align="center"><img src="https://img.shields.io/badge/License-CNC--1.0-red.svg" /> <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" /> <img src="https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white" /> <img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white" /> <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" /> <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" /></p>
-<p align="center"><strong>Current stable release: v0.3.1</strong> | <a href="https://github.com/yukkcat/gemini-business2api/releases/tag/v0.3.1">Release Notes</a> | <a href="https://github.com/yukkcat/gemini-business2api/releases">All Releases</a></p>
+<p align="center"><strong>Current stable release: v0.3.2</strong> | <a href="https://github.com/yukkcat/gemini-business2api/releases/tag/v0.3.2">Release Notes</a> | <a href="https://github.com/yukkcat/gemini-business2api/releases">All Releases</a></p>
 
 > [!IMPORTANT]
 > Since **v0.3.0**, the repository mainline has been fully narrowed into a **2API-focused mainline**:
@@ -171,7 +171,7 @@ curl -fsSL https://raw.githubusercontent.com/yukkcat/gemini-business2api/main/de
 Pin to the current stable release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yukkcat/gemini-business2api/v0.3.1/deploy/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/yukkcat/gemini-business2api/v0.3.2/deploy/install.sh | sudo bash
 ```
 
 Preset `refresh-worker` to enabled by default:

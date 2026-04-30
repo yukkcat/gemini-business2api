@@ -21,8 +21,6 @@ load_dotenv()
 LANG_ZH = "zh"
 LANG_EN = "en"
 CLI_LANG_ENV_KEY = "CLI_LANG"
-DEFAULT_BROWSER_MODE = "normal"
-VALID_BROWSER_MODES = {"normal", "silent", "headless"}
 VALID_MAIL_PROVIDERS = ("moemail", "duckmail", "freemail", "gptmail", "cfmail")
 DEFAULT_LANG = LANG_ZH
 CURRENT_LANG = DEFAULT_LANG
@@ -48,13 +46,6 @@ def _t(zh: str, en: str) -> str:
 
 def _is_yes(value: str) -> bool:
     return (value or "").strip().lower() in {"y", "yes", "1", "true", "是"}
-
-
-def _normalize_browser_mode(value: str, default: str = DEFAULT_BROWSER_MODE) -> str:
-    raw = (value or "").strip().lower()
-    if raw in VALID_BROWSER_MODES:
-        return raw
-    return default
 
 
 def _normalize_mail_provider(value: str, default: str = "duckmail") -> str:
@@ -169,40 +160,40 @@ def show_current_config() -> None:
         "remote login password / ADMIN_KEY",
     )
     _print_config_item(
-        "FORCE_REFRESH_ENABLED",
-        os.getenv("FORCE_REFRESH_ENABLED", "(not set)"),
-        "强制启用/禁用定时刷新",
-        "force enable/disable scheduled refresh",
+        "REMOTE_PROJECT_VERIFY_SSL",
+        os.getenv("REMOTE_PROJECT_VERIFY_SSL", "(not set)"),
+        "远程 HTTPS 证书校验",
+        "remote HTTPS certificate verification",
     )
     _print_config_item(
-        "REFRESH_INTERVAL_MINUTES",
-        os.getenv("REFRESH_INTERVAL_MINUTES", "(not set)"),
-        "刷新检测间隔（分钟）",
-        "refresh interval in minutes",
+        "REMOTE_PROJECT_TIMEOUT_SECONDS",
+        os.getenv("REMOTE_PROJECT_TIMEOUT_SECONDS", "(not set)"),
+        "远程 API 超时秒数",
+        "remote API timeout seconds",
     )
     _print_config_item(
-        "BROWSER_MODE",
-        _normalize_browser_mode(os.getenv("BROWSER_MODE", ""), "(not set)"),
-        "浏览器模式（normal / silent / headless）",
-        "browser mode (normal / silent / headless)",
+        "LOG_LEVEL",
+        os.getenv("LOG_LEVEL", "(not set)"),
+        "日志级别",
+        "log level",
     )
     _print_config_item(
-        "BROWSER_HEADLESS",
-        os.getenv("BROWSER_HEADLESS", "(not set)"),
-        "兼容旧字段：是否无头（被 BROWSER_MODE 覆盖）",
-        "legacy headless flag (overridden by BROWSER_MODE)",
+        "BUSINESS_CONFIG_SOURCE",
+        "cloud/storage",
+        "业务配置来源",
+        "business settings source",
     )
     _print_config_item(
-        "PROXY_FOR_AUTH",
-        os.getenv("PROXY_FOR_AUTH", "(not set)"),
-        "本机认证代理",
-        "local proxy for auth",
+        "BUSINESS_ENV_OVERRIDES",
+        "disabled",
+        "业务环境变量覆盖",
+        "local business env overrides",
     )
     _print_config_item(
-        "REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH",
-        os.getenv("REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH", "(not set)"),
-        "是否继承远程 proxy_for_auth",
-        "inherit remote proxy_for_auth or not",
+        "BOOTSTRAP_ONLY",
+        "true",
+        "环境变量仅用于启动连接",
+        "env is only used for bootstrap settings",
     )
     _print_config_item(
         "HEALTH_PORT",
@@ -307,6 +298,7 @@ def show_current_config() -> None:
 
 
 def _test_remote_connection_inner() -> Tuple[bool, str]:
+    from worker.config import _normalize_loaded_settings
     from worker.remote_project_bridge import RemoteProjectBridge
 
     bridge = RemoteProjectBridge()
@@ -321,8 +313,9 @@ def _test_remote_connection_inner() -> Tuple[bool, str]:
             )
         )
 
-    retry = settings.get("retry", {}) if isinstance(settings, dict) else {}
-    basic = settings.get("basic", {}) if isinstance(settings, dict) else {}
+    normalized_settings = _normalize_loaded_settings(settings)
+    retry = normalized_settings.get("retry", {})
+    basic = normalized_settings.get("basic", {})
     message = (
         f"{_t('远程连接成功', 'Remote connection successful')}, "
         f"{_t('账号数', 'accounts')}={len(accounts)}, "
@@ -365,12 +358,10 @@ def diagnose_google_access() -> None:
     storage_mode = storage.get_storage_mode()
     raw_proxy = config.basic.proxy_for_auth or ""
     proxy_url, no_proxy = parse_proxy_setting(raw_proxy)
-    env_proxy = os.getenv("PROXY_FOR_AUTH")
-
     print(f"storage_mode: {storage_mode}")
     print(f"proxy_for_auth(runtime): {proxy_url or '(empty)'}")
+    print("proxy_for_auth source: cloud/storage")
     print(f"no_proxy: {no_proxy or '(empty)'}")
-    print(f"PROXY_FOR_AUTH env: {env_proxy if env_proxy is not None else '(not set)'}")
     print("-" * 60)
 
     urls = [
@@ -393,25 +384,25 @@ def diagnose_google_access() -> None:
         print(
             "\n"
             + _t(
-                "代理检查: 跳过（当前未启用 PROXY_FOR_AUTH）",
-                "Proxy check: skipped (PROXY_FOR_AUTH is not enabled)",
+                "代理检查: 跳过（云端 proxy_for_auth 为空）",
+                "Proxy check: skipped (cloud proxy_for_auth is empty)",
             )
         )
 
-    if storage_mode == "remote" and env_proxy is None:
+    if storage_mode == "remote":
         print("\n" + _t("提示:", "Tip:"))
         print(
             "- "
             + _t(
-                "远程模式默认不继承远程站点的 proxy_for_auth，避免把远程 localhost 代理误用到本机。",
-                "Remote mode does not inherit remote proxy_for_auth by default to avoid misusing remote localhost proxies.",
+                "认证代理现在只读取云端 proxy_for_auth。",
+                "Auth proxy is now read only from cloud proxy_for_auth.",
             )
         )
         print(
             "- "
             + _t(
-                "如果本机访问 Google 需要代理，请在本地 .env 设置 PROXY_FOR_AUTH（例如 socks5h://127.0.0.1:7890）。",
-                "If your local machine needs a proxy to access Google, set PROXY_FOR_AUTH in local .env (e.g. socks5h://127.0.0.1:7890).",
+                "如果这台 worker 访问 Google 需要代理，请在云端管理后台更新 proxy_for_auth。",
+                "If this worker machine needs a proxy, update proxy_for_auth in the cloud admin settings.",
             )
         )
 
@@ -600,22 +591,13 @@ def run_register_command(
     print("=" * 60)
 
     if interactive and not interrupted:
-        persist_choice = input(
+        print(
             _t(
-                "是否将本次提供商/域名写入本地 .env 作为默认？(y/N): ",
-                "Persist provider/domain to local .env as defaults? (y/N): ",
+                "业务默认值不再写入本地 .env，请在云端管理后台修改。",
+                "Business defaults are no longer written to local .env; update them in the cloud admin settings.",
             )
-        ).strip()
-        if _is_yes(persist_choice):
-            updates = {"TEMP_MAIL_PROVIDER": provider}
-            if provider == "duckmail":
-                updates["REGISTER_DOMAIN"] = domain_value
-            elif provider == "cfmail":
-                updates["CFMAIL_DOMAIN"] = domain_value
-            updates["REGISTER_DEFAULT_COUNT"] = str(register_count)
-            path = _save_env_updates(updates)
-            load_dotenv(path, override=True)
-            print(f"{_t('已写入', 'Saved')}: {path.resolve()}")
+        )
+        return
 
 
 def run_polling_command() -> None:
@@ -641,14 +623,15 @@ def run_env_wizard() -> None:
     current_pwd = os.getenv("REMOTE_PROJECT_PASSWORD", "").strip()
     current_verify = os.getenv("REMOTE_PROJECT_VERIFY_SSL", "true").strip().lower() or "true"
     current_timeout = os.getenv("REMOTE_PROJECT_TIMEOUT_SECONDS", "30").strip() or "30"
-    current_force = os.getenv("FORCE_REFRESH_ENABLED", "true").strip().lower() or "true"
-    current_interval = os.getenv("REFRESH_INTERVAL_MINUTES", "30").strip() or "30"
-    current_browser_mode = _normalize_browser_mode(os.getenv("BROWSER_MODE", DEFAULT_BROWSER_MODE), DEFAULT_BROWSER_MODE)
-    current_proxy = os.getenv("PROXY_FOR_AUTH", "").strip()
-    current_use_remote_proxy = os.getenv("REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH", "false").strip().lower() or "false"
     current_lang = _normalize_lang(os.getenv(CLI_LANG_ENV_KEY, CURRENT_LANG))
 
     print(_t("直接回车可保留当前值。", "Press Enter to keep current values."))
+    print(
+        _t(
+            "提示：刷新、浏览器、代理、注册等业务配置请在云端管理后台修改。",
+            "Note: refresh, browser, proxy, and registration settings are managed in the cloud admin settings.",
+        )
+    )
     base_url = input(
         f"REMOTE_PROJECT_BASE_URL [{current_url}] "
         f"({_t('远程项目地址', 'remote project URL')}): "
@@ -666,30 +649,6 @@ def run_env_wizard() -> None:
         f"REMOTE_PROJECT_TIMEOUT_SECONDS [{current_timeout}] "
         f"({_t('远程请求超时秒数', 'remote request timeout seconds')}): "
     ).strip() or current_timeout
-    force_enabled = input(
-        f"FORCE_REFRESH_ENABLED [{current_force}] "
-        f"({_t('是否强制启用定时刷新', 'force scheduled refresh on/off')}): "
-    ).strip() or current_force
-    interval = input(
-        f"REFRESH_INTERVAL_MINUTES [{current_interval}] "
-        f"({_t('刷新间隔分钟', 'refresh interval in minutes')}): "
-    ).strip() or current_interval
-    browser_mode = _normalize_browser_mode(
-        input(
-            f"BROWSER_MODE [{current_browser_mode}] "
-            f"({_t('浏览器模式：normal/silent/headless', 'browser mode: normal/silent/headless')}): "
-        ).strip()
-        or current_browser_mode,
-        current_browser_mode,
-    )
-    proxy_for_auth = input(
-        f"PROXY_FOR_AUTH [{current_proxy}] "
-        f"({_t('本机代理，可留空', 'local proxy, optional')}): "
-    ).strip() or current_proxy
-    use_remote_proxy = input(
-        f"REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH [{current_use_remote_proxy}] "
-        f"({_t('是否继承远程代理，默认false', 'inherit remote proxy, default false')}): "
-    ).strip() or current_use_remote_proxy
     cli_lang = _normalize_lang(
         input(
             f"{CLI_LANG_ENV_KEY} [{current_lang}] "
@@ -710,11 +669,6 @@ def run_env_wizard() -> None:
         "REMOTE_PROJECT_PASSWORD": password,
         "REMOTE_PROJECT_VERIFY_SSL": verify_ssl,
         "REMOTE_PROJECT_TIMEOUT_SECONDS": timeout,
-        "FORCE_REFRESH_ENABLED": force_enabled,
-        "REFRESH_INTERVAL_MINUTES": interval,
-        "BROWSER_MODE": browser_mode,
-        "PROXY_FOR_AUTH": proxy_for_auth,
-        "REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH": use_remote_proxy,
         CLI_LANG_ENV_KEY: cli_lang,
     }
 

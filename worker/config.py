@@ -42,12 +42,71 @@ def _normalize_browser_mode(value, default: str = "normal") -> str:
     return default
 
 
-def _normalize_temp_mail_provider(value, default: str = "duckmail") -> str:
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered in ("moemail", "duckmail", "freemail", "gptmail", "cfmail"):
-            return lowered
-    return default
+def _as_dict(value) -> dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _set_if_present(target: dict, key: str, value) -> None:
+    if value is not None:
+        target[key] = value
+
+
+def _merge_mail_settings(target: dict, prefix: str, source: dict) -> None:
+    if not source:
+        return
+    _set_if_present(target, f"{prefix}_base_url", source.get("base_url"))
+    _set_if_present(target, f"{prefix}_api_key", source.get("api_key"))
+    _set_if_present(target, f"{prefix}_verify_ssl", source.get("verify_ssl"))
+    _set_if_present(target, f"{prefix}_domain", source.get("domain"))
+
+
+def _normalize_loaded_settings(raw_data: dict) -> dict:
+    """Accept both direct storage snapshots and /admin/settings payloads."""
+    data = _as_dict(raw_data)
+    basic = dict(_as_dict(data.get("basic")))
+    retry = dict(_as_dict(data.get("retry")))
+    refresh = _as_dict(data.get("refresh_settings"))
+
+    if refresh:
+        for key in (
+            "proxy_for_auth",
+            "temp_mail_provider",
+            "mail_proxy_enabled",
+            "browser_mode",
+            "browser_headless",
+            "refresh_window_hours",
+            "register_domain",
+            "register_default_count",
+        ):
+            _set_if_present(basic, key, refresh.get(key))
+        _merge_mail_settings(basic, "duckmail", _as_dict(refresh.get("duckmail")))
+        _merge_mail_settings(basic, "moemail", _as_dict(refresh.get("moemail")))
+        _merge_mail_settings(basic, "gptmail", _as_dict(refresh.get("gptmail")))
+        _merge_mail_settings(basic, "cfmail", _as_dict(refresh.get("cfmail")))
+
+        freemail = _as_dict(refresh.get("freemail"))
+        if freemail:
+            _set_if_present(basic, "freemail_base_url", freemail.get("base_url"))
+            _set_if_present(basic, "freemail_jwt_token", freemail.get("jwt_token"))
+            _set_if_present(basic, "freemail_verify_ssl", freemail.get("verify_ssl"))
+            _set_if_present(basic, "freemail_domain", freemail.get("domain"))
+
+        for key in (
+            "scheduled_refresh_enabled",
+            "scheduled_refresh_interval_minutes",
+            "scheduled_refresh_cron",
+            "verification_code_resend_count",
+            "refresh_batch_size",
+            "refresh_batch_interval_minutes",
+            "refresh_cooldown_hours",
+            "delete_expired_accounts",
+            "auto_register_enabled",
+            "min_account_count",
+        ):
+            if refresh.get(key) is not None:
+                retry[key] = refresh[key]
+
+    return {"basic": basic, "retry": retry}
 
 
 # ==================== Config models ====================
@@ -113,10 +172,9 @@ class ConfigManager:
 
     def load(self):
         """Load config from storage backend."""
-        yaml_data = self._load_from_db()
+        yaml_data = _normalize_loaded_settings(self._load_from_db())
 
         basic_data = yaml_data.get("basic", {})
-        storage_mode = storage.get_storage_mode()
 
         # Compat: migrate old proxy field
         old_proxy = basic_data.get("proxy", "")
@@ -160,19 +218,6 @@ class ConfigManager:
             register_default_count=max(1, int(basic_data.get("register_default_count", 20))),
         )
 
-        # Remote mode safe default:
-        # Do not blindly reuse remote project's proxy_for_auth on local worker,
-        # because remote-side localhost proxies (e.g. 127.0.0.1:7890) are usually
-        # unreachable from this machine and can cause "cannot access Google".
-        use_remote_proxy = _parse_bool(os.getenv("REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH"), False)
-        if storage_mode == "remote" and os.getenv("PROXY_FOR_AUTH") is None and not use_remote_proxy:
-            if basic_config.proxy_for_auth:
-                logger.warning(
-                    "[CONFIG] remote mode: ignoring remote proxy_for_auth=%s; set local PROXY_FOR_AUTH to enable proxy",
-                    basic_config.proxy_for_auth,
-                )
-            basic_config.proxy_for_auth = ""
-
         try:
             retry_config = RetryConfig(**yaml_data.get("retry", {}))
         except Exception as e:
@@ -180,134 +225,6 @@ class ConfigManager:
             retry_config = RetryConfig()
 
         self._config = WorkerConfig(basic=basic_config, retry=retry_config)
-
-        # Apply environment variable overrides (take precedence over storage values)
-        self._apply_env_overrides()
-
-    def _apply_env_overrides(self) -> None:
-        """Override config fields with environment variables when set."""
-        env_refresh_enabled = os.getenv("FORCE_REFRESH_ENABLED")
-        if env_refresh_enabled is not None:
-            val = _parse_bool(env_refresh_enabled, self._config.retry.scheduled_refresh_enabled)
-            self._config.retry.scheduled_refresh_enabled = val
-            logger.info("[CONFIG] env override: FORCE_REFRESH_ENABLED=%s", val)
-
-        env_interval = os.getenv("REFRESH_INTERVAL_MINUTES")
-        if env_interval is not None:
-            try:
-                val = max(1, min(720, int(env_interval)))
-                self._config.retry.scheduled_refresh_interval_minutes = val
-                logger.info("[CONFIG] env override: REFRESH_INTERVAL_MINUTES=%d", val)
-            except ValueError:
-                logger.warning("[CONFIG] invalid REFRESH_INTERVAL_MINUTES=%r, ignored", env_interval)
-
-        env_window = os.getenv("REFRESH_WINDOW_HOURS")
-        if env_window is not None:
-            try:
-                val = max(0, min(24, int(env_window)))
-                self._config.basic.refresh_window_hours = val
-                logger.info("[CONFIG] env override: REFRESH_WINDOW_HOURS=%d", val)
-            except ValueError:
-                logger.warning("[CONFIG] invalid REFRESH_WINDOW_HOURS=%r, ignored", env_window)
-
-        env_browser_mode = os.getenv("BROWSER_MODE")
-        if env_browser_mode is not None:
-            mode = _normalize_browser_mode(env_browser_mode, self._config.basic.browser_mode)
-            if mode != env_browser_mode.strip().lower():
-                logger.warning(
-                    "[CONFIG] invalid BROWSER_MODE=%r, fallback to %s",
-                    env_browser_mode,
-                    mode,
-                )
-            self._config.basic.browser_mode = mode
-            self._config.basic.browser_headless = mode == "headless"
-            logger.info("[CONFIG] env override: BROWSER_MODE=%s", mode)
-
-        env_headless = os.getenv("BROWSER_HEADLESS")
-        if env_headless is not None:
-            if env_browser_mode is not None:
-                logger.info("[CONFIG] BROWSER_HEADLESS ignored because BROWSER_MODE is set")
-            else:
-                val = _parse_bool(env_headless, self._config.basic.browser_headless)
-                self._config.basic.browser_headless = val
-                self._config.basic.browser_mode = "headless" if val else "normal"
-                logger.info("[CONFIG] env override: BROWSER_HEADLESS=%s", val)
-
-        env_proxy = os.getenv("PROXY_FOR_AUTH")
-        if env_proxy is not None:
-            self._config.basic.proxy_for_auth = env_proxy.strip()
-            logger.info("[CONFIG] env override: PROXY_FOR_AUTH=%s", "***" if env_proxy.strip() else "(empty)")
-
-        env_temp_mail_provider = os.getenv("TEMP_MAIL_PROVIDER")
-        if env_temp_mail_provider is not None:
-            provider = _normalize_temp_mail_provider(
-                env_temp_mail_provider,
-                self._config.basic.temp_mail_provider,
-            )
-            if provider != env_temp_mail_provider.strip().lower():
-                logger.warning(
-                    "[CONFIG] invalid TEMP_MAIL_PROVIDER=%r, fallback to %s",
-                    env_temp_mail_provider,
-                    provider,
-                )
-            self._config.basic.temp_mail_provider = provider
-            logger.info("[CONFIG] env override: TEMP_MAIL_PROVIDER=%s", provider)
-
-        env_cfmail_base_url = os.getenv("CFMAIL_BASE_URL")
-        if env_cfmail_base_url is not None:
-            self._config.basic.cfmail_base_url = env_cfmail_base_url.strip()
-            logger.info("[CONFIG] env override: CFMAIL_BASE_URL=%s", self._config.basic.cfmail_base_url or "(empty)")
-
-        env_cfmail_api_key = os.getenv("CFMAIL_API_KEY")
-        if env_cfmail_api_key is not None:
-            self._config.basic.cfmail_api_key = env_cfmail_api_key.strip()
-            logger.info("[CONFIG] env override: CFMAIL_API_KEY=%s", "***" if self._config.basic.cfmail_api_key else "(empty)")
-
-        env_cfmail_verify_ssl = os.getenv("CFMAIL_VERIFY_SSL")
-        if env_cfmail_verify_ssl is not None:
-            val = _parse_bool(env_cfmail_verify_ssl, self._config.basic.cfmail_verify_ssl)
-            self._config.basic.cfmail_verify_ssl = val
-            logger.info("[CONFIG] env override: CFMAIL_VERIFY_SSL=%s", val)
-
-        env_cfmail_domain = os.getenv("CFMAIL_DOMAIN")
-        if env_cfmail_domain is not None:
-            self._config.basic.cfmail_domain = env_cfmail_domain.strip()
-            logger.info("[CONFIG] env override: CFMAIL_DOMAIN=%s", self._config.basic.cfmail_domain or "(empty)")
-
-        env_delete_expired = os.getenv("DELETE_EXPIRED_ACCOUNTS")
-        if env_delete_expired is not None:
-            val = _parse_bool(env_delete_expired, self._config.retry.delete_expired_accounts)
-            self._config.retry.delete_expired_accounts = val
-            logger.info("[CONFIG] env override: DELETE_EXPIRED_ACCOUNTS=%s", val)
-
-        env_auto_register = os.getenv("AUTO_REGISTER_ENABLED")
-        if env_auto_register is not None:
-            val = _parse_bool(env_auto_register, self._config.retry.auto_register_enabled)
-            self._config.retry.auto_register_enabled = val
-            logger.info("[CONFIG] env override: AUTO_REGISTER_ENABLED=%s", val)
-
-        env_min_count = os.getenv("MIN_ACCOUNT_COUNT")
-        if env_min_count is not None:
-            try:
-                val = max(0, min(100, int(env_min_count)))
-                self._config.retry.min_account_count = val
-                logger.info("[CONFIG] env override: MIN_ACCOUNT_COUNT=%d", val)
-            except ValueError:
-                logger.warning("[CONFIG] invalid MIN_ACCOUNT_COUNT=%r, ignored", env_min_count)
-
-        env_register_domain = os.getenv("REGISTER_DOMAIN")
-        if env_register_domain is not None:
-            self._config.basic.register_domain = env_register_domain.strip()
-            logger.info("[CONFIG] env override: REGISTER_DOMAIN=%s", env_register_domain.strip() or "(empty)")
-
-        env_register_count = os.getenv("REGISTER_DEFAULT_COUNT")
-        if env_register_count is not None:
-            try:
-                val = max(1, int(env_register_count))
-                self._config.basic.register_default_count = val
-                logger.info("[CONFIG] env override: REGISTER_DEFAULT_COUNT=%d", val)
-            except ValueError:
-                logger.warning("[CONFIG] invalid REGISTER_DEFAULT_COUNT=%r, ignored", env_register_count)
 
     def _load_from_db(self) -> dict:
         """Load config from storage backend (database or remote project)."""

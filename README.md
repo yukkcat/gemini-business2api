@@ -1,91 +1,88 @@
 # gemini-refresh-worker
 
-独立部署的 Gemini Business 账户刷新服务。  
+独立部署的 Gemini Business 账户刷新服务。
 Standalone refresh service for Gemini Business accounts.
 
-它从主项目 [gemini-business2api](https://github.com/Dreamy-rain/gemini-business2api) 中拆分而来，专注于“检测即将过期账号并自动刷新凭证”。  
-It is split from the main project and focuses on detecting expiring accounts and refreshing credentials automatically.
+它专注做一件事：从云端/数据库读取账号和刷新配置，检测即将过期的账号，并通过本机浏览器自动化刷新凭证。
+It focuses on one job: load accounts and refresh settings from cloud/storage, detect accounts close to expiration, and refresh credentials through local browser automation.
 
-## 推荐场景 / Recommended Topology
+## 先用交互脚本 / Start With The Interactive CLI
 
-- 远程部署一套 `beta`（提供管理面板与 API）。  
-  Deploy one remote `beta` instance (admin panel + API).
-- 本地运行 `refresh-worker`（执行浏览器自动化刷新）。  
-  Run `refresh-worker` locally (browser automation executor).
-- 不需要本地再部署第二套 `beta`。  
-  You do not need a second local `beta`.
+最推荐从交互脚本开始，它会引导你写入远程连接配置，并提供诊断、手动刷新、手动注册和前台轮询入口。
+The recommended entrypoint is the interactive CLI. It can write remote bootstrap config and run diagnostics, manual refresh, registration, and foreground polling.
 
-## 功能概览 / Feature Overview
+```bash
+pip install -r requirements.txt
+python -m worker.cli
+```
 
-- 定时轮询刷新即将过期账号。  
-  Scheduled polling for accounts close to expiration.
-- 支持手动触发“一次刷新”。  
-  Supports manual "run once" refresh.
-- 支持远程项目模式（通过远程管理 API 拉取/回写数据）。  
-  Supports remote project mode (read/write via remote admin APIs).
-- 支持本机代理诊断（Google 连通性检测）。  
-  Built-in local proxy/Google connectivity diagnostics.
-- 支持自动删除过期账号、自动补充注册账号（可选）。  
-  Optional lifecycle automation: delete expired accounts and auto-register new ones.
+如果只想配置 `.env`，可以直接跑向导：
+If you only want to configure `.env`, run the wizard directly:
+
+```bash
+python -m worker.cli wizard
+```
+
+配置后建议先跑一次诊断：
+After setup, run diagnostics first:
+
+```bash
+python -m worker.cli doctor
+```
+
+## 推荐部署方式 / Recommended Topology
+
+- 远程部署一套主项目或 `beta`，负责管理后台和 API。
+  Deploy one remote main/beta service for the admin panel and APIs.
+- 本地或 Linux 服务器运行 `refresh-worker`，负责真实浏览器自动化。
+  Run `refresh-worker` locally or on a Linux server for real browser automation.
+- 业务配置统一在云端管理后台维护，本地 `.env` 只放启动连接信息。
+  Business settings are managed in the cloud admin panel; local `.env` only stores bootstrap connection settings.
 
 ## 快速开始 / Quick Start
 
-### 1) 准备环境变量 / Prepare environment variables
+### 1) 选择存储模式 / Choose Storage Mode
 
-```bash
-cp .env.example .env
+推荐远程项目模式：worker 通过远端管理接口读写账号和配置。
+Remote project mode is recommended: the worker reads/writes accounts and settings through remote admin APIs.
+
+```env
+REMOTE_PROJECT_BASE_URL=https://your-beta-domain.example
+REMOTE_PROJECT_PASSWORD=your_admin_key
+REMOTE_PROJECT_VERIFY_SSL=true
+REMOTE_PROJECT_TIMEOUT_SECONDS=30
 ```
 
-按你的场景填写 `.env`。  
-Fill `.env` based on your deployment mode.
-
-### 2) 选择存储模式（二选一）/ Choose storage mode (pick one)
-
-**模式 A：数据库直连 / Mode A: direct database**
+也可以直连数据库：
+Direct database mode is also supported:
 
 ```env
 DATABASE_URL=postgresql://user:password@host:5432/dbname?sslmode=require
 ```
 
-**模式 B：远程项目模式（推荐）/ Mode B: remote project (recommended)**
+如果同时配置 `DATABASE_URL` 和 `REMOTE_PROJECT_BASE_URL`，优先使用远程项目模式。
+If both `DATABASE_URL` and `REMOTE_PROJECT_BASE_URL` are configured, remote project mode wins.
 
-```env
-REMOTE_PROJECT_BASE_URL=https://your-beta-domain.example
-REMOTE_PROJECT_PASSWORD=your_admin_key
-```
-
-如果两个都配置了，优先使用远程项目模式。  
-If both are configured, remote project mode takes precedence.
-
-可选：设置浏览器模式（默认 `normal`）。  
-Optional: set browser mode (default `normal`).
-
-```env
-BROWSER_MODE=silent
-```
-
-### 3) 启动方式 / Run options
-
-**本地 Python 运行 / Run with Python**
+### 2) 启动 Worker / Run The Worker
 
 ```bash
-pip install -r requirements.txt
 python -m worker.main
 ```
 
-**本地交互菜单 / Interactive console**
+前台轮询调试可以用：
+For foreground polling/debugging:
 
 ```bash
-python -m worker.cli
+python -m worker.cli poll
 ```
 
-**Docker Compose（源码）/ Docker Compose (from source)**
+Docker Compose：
 
 ```bash
 docker compose up -d --build
 ```
 
-**Docker（镜像）/ Docker (image)**
+Docker 镜像：
 
 ```bash
 docker run -d \
@@ -96,168 +93,122 @@ docker run -d \
   your_dockerhub_username/gemini-refresh-worker:latest
 ```
 
-### 4) 手动执行一次刷新 / Trigger one refresh manually
+## 常用命令 / Common Commands
 
-```bash
-python -m worker.cli once
-```
+| 命令 / Command | 用途 / Purpose |
+|---|---|
+| `python -m worker.cli` | 打开交互菜单 / Open interactive menu |
+| `python -m worker.cli wizard` | 写入远程启动配置 / Write remote bootstrap config |
+| `python -m worker.cli doctor` | 检查配置、远程连接和 Google 连通性 / Check config, remote connection, and Google connectivity |
+| `python -m worker.cli google` | 仅做 Google/代理诊断 / Run Google/proxy diagnostics only |
+| `python -m worker.cli once` | 立即执行一轮刷新 / Run one refresh immediately |
+| `python -m worker.cli poll` | 前台守护轮询 / Start foreground polling |
+| `python -m worker.cli register --count 20 --provider duckmail` | 手动注册账号 / Register accounts manually |
+| `python -m worker.cli lang en --save` | 切换并保存 CLI 语言 / Switch and persist CLI language |
 
-### 5) 手动注册账号（可选邮箱提供商）/ Manual account registration (select provider)
+## 配置原则 / Configuration Model
 
-```bash
-# 交互选择 provider / 数量 / 域名
-python -m worker.cli
+### `.env` 只做启动配置 / `.env` Is Bootstrap Only
 
-# 命令行直接注册 20 个（示例：duckmail / cfmail）
-python -m worker.cli register --count 20 --provider duckmail
-```
+本地环境变量只负责让 worker 启动并连接到云端或数据库：
+Local environment variables only let the worker boot and connect to cloud/storage:
 
-### 6) 健康检查 / Health check
+| 变量 / Variable | 说明 / Description |
+|---|---|
+| `REMOTE_PROJECT_BASE_URL` | 远程项目地址 / Remote project base URL |
+| `REMOTE_PROJECT_PASSWORD` | 远程管理密码或 `ADMIN_KEY` / Remote admin password or `ADMIN_KEY` |
+| `REMOTE_PROJECT_VERIFY_SSL` | 是否校验远程 HTTPS 证书 / Verify remote HTTPS certificate |
+| `REMOTE_PROJECT_TIMEOUT_SECONDS` | 远程 API 超时时间 / Remote API timeout seconds |
+| `DATABASE_URL` | 直连数据库模式连接串 / Direct database URL |
+| `LOG_LEVEL` | 日志级别 / Log level |
+| `HEALTH_PORT` | 健康检查端口，`0` 表示关闭 / Health port, `0` disables it |
+| `CLI_LANG` | CLI 语言，`zh` 或 `en` / CLI language, `zh` or `en` |
 
-```bash
-curl http://localhost:8080/health
-# {"status":"ok"}
-```
+### 业务配置全部走云端 / Business Settings Come From Cloud
 
-## CLI 命令 / CLI Commands
+这些配置不再读取本地环境变量：
+These settings are no longer read from local environment variables:
 
-| 命令 / Command | 说明（中文） | Description (English) |
-|---|---|---|
-| `python -m worker.cli` | 打开交互菜单 | Open interactive menu |
-| `python -m worker.cli once` | 立即执行一轮刷新 | Run one refresh immediately |
-| `python -m worker.cli register --count 20 --provider duckmail` | 手动注册账号（可指定邮箱提供商） | Register accounts manually (provider selectable) |
-| `python -m worker.cli poll` | 前台守护轮询 | Start foreground polling loop |
-| `python -m worker.cli doctor` | 配置 + 远程连接 + Google 诊断 | Config + remote check + Google diagnostics |
-| `python -m worker.cli google` | 仅做 Google/代理诊断 | Google/proxy diagnostics only |
-| `python -m worker.cli wizard` | 交互写入 `.env` | Interactive `.env` setup wizard |
-| `python -m worker.cli lang en --save` | 切换语言并写入 `.env` | Switch language and persist into `.env` |
+- 定时刷新开关、刷新窗口、刷新批次和冷却时间
+  Scheduled refresh, refresh window, batch size, and cooldown
+- 浏览器模式、认证代理 `proxy_for_auth`
+  Browser mode and auth proxy `proxy_for_auth`
+- 自动删除过期账号、自动补充注册账号、最低账号数
+  Expired-account cleanup, auto-registration, and minimum account count
+- 临时邮箱提供商、DuckMail、MoEmail、FreeMail、GPTMail、CFMail 配置
+  Temp-mail provider settings for DuckMail, MoEmail, FreeMail, GPTMail, and CFMail
 
-交互菜单里也提供语言切换选项，默认中文。  
-Language switch is also available in interactive menu, default is Chinese.
+请在云端管理后台修改这些业务配置；worker 每轮都会加载最新云端/存储配置。
+Update business settings in the cloud admin panel; the worker loads the latest cloud/storage config on each cycle.
 
-## 环境变量 / Environment Variables
+## 远程模式接口 / Remote Mode APIs
 
-### 核心变量 / Core variables
-
-| 变量 | 中文说明 | English |
-|---|---|---|
-| `DATABASE_URL` | 直连数据库模式连接串 | DB URL for direct database mode |
-| `REMOTE_PROJECT_BASE_URL` | 远程项目地址（beta 地址） | Remote project base URL (beta URL) |
-| `REMOTE_PROJECT_PASSWORD` | 远程管理密码（登录密码 / ADMIN_KEY） | Remote admin password (login password / ADMIN_KEY) |
-| `CLI_LANG` | CLI 语言（`zh`/`en`，默认 `zh`） | CLI language (`zh`/`en`, default `zh`) |
-| `LOG_LEVEL` | 日志级别：`DEBUG/INFO/WARNING/ERROR` | Log level |
-| `HEALTH_PORT` | 健康检查端口，`0` 为关闭 | Health check port (`0` disables) |
-
-### 远程模式变量 / Remote mode variables
-
-| 变量 | 中文说明 | English |
-|---|---|---|
-| `REMOTE_PROJECT_VERIFY_SSL` | 是否校验远程 HTTPS 证书 | Verify remote HTTPS certificate |
-| `REMOTE_PROJECT_TIMEOUT_SECONDS` | 远程 API 超时时间（秒） | Remote API timeout in seconds |
-| `REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH` | 是否继承远程 `proxy_for_auth`（默认 `false`） | Whether to inherit remote `proxy_for_auth` (default `false`) |
-| `CFMAIL_BASE_URL` | CFMail 服务地址（可选） | CFMail service base URL (optional) |
-| `CFMAIL_API_KEY` | CFMail 管理密钥（可选） | CFMail admin key (optional) |
-| `CFMAIL_VERIFY_SSL` | CFMail SSL 校验（可选，默认 true） | CFMail SSL verify (optional, default true) |
-| `CFMAIL_DOMAIN` | CFMail 默认注册域名（可选） | CFMail default register domain (optional) |
-
-### 刷新覆盖变量 / Refresh override variables
-
-| 变量 | 中文说明 | English |
-|---|---|---|
-| `FORCE_REFRESH_ENABLED` | 强制开关定时刷新（覆盖存储配置） | Force scheduled refresh on/off (override storage config) |
-| `REFRESH_INTERVAL_MINUTES` | 刷新检测间隔（分钟） | Refresh check interval in minutes |
-| `REFRESH_WINDOW_HOURS` | 过期窗口（小时） | Expiration window in hours |
-| `BROWSER_MODE` | 浏览器模式：`normal`/`silent`/`headless` | Browser mode: `normal`/`silent`/`headless` |
-| `BROWSER_HEADLESS` | 兼容旧字段（若设置了 `BROWSER_MODE` 将被忽略） | Legacy compatibility field (ignored when `BROWSER_MODE` is set) |
-| `PROXY_FOR_AUTH` | 本机认证代理（如 `socks5h://127.0.0.1:7890`） | Local auth proxy |
-
-浏览器模式建议：  
-Browser mode recommendations:
-
-- `normal`：正常有头窗口，适合人工观察。  
-  `normal`: regular headed window, good for active observation.
-- `silent`：有头运行但尽量最小化，减少抢占焦点。  
-  `silent`: headed but minimized to reduce focus stealing.
-- `headless`：完全无头，资源占用更低。  
-  `headless`: fully headless, usually lower resource usage.
-
-### 账号生命周期变量 / Account lifecycle variables
-
-| 变量 | 中文说明 | English |
-|---|---|---|
-| `DELETE_EXPIRED_ACCOUNTS` | 自动删除凭证过期账号 | Auto-delete accounts with expired credentials |
-| `AUTO_REGISTER_ENABLED` | 自动补充注册账号 | Auto-register new accounts when needed |
-| `MIN_ACCOUNT_COUNT` | 最低活跃账号数量阈值 | Minimum active account threshold |
-| `TEMP_MAIL_PROVIDER` | 本地默认临时邮箱提供商（`duckmail`/`moemail`/`freemail`/`gptmail`/`cfmail`） | Local default temp mail provider (`duckmail`/`moemail`/`freemail`/`gptmail`/`cfmail`) |
-| `REGISTER_DOMAIN` | 注册邮箱域名（DuckMail） | Registration email domain (DuckMail) |
-| `REGISTER_DEFAULT_COUNT` | 单批注册数量（>=1，默认 20） | Accounts to register per batch (>=1, default 20) |
-
-## 远程模式说明 / Remote Mode Notes
-
-远程模式会通过以下接口读写数据：  
-Remote mode reads/writes data via these endpoints:
+远程模式会调用：
+Remote mode uses:
 
 - `POST /login`
 - `GET /admin/settings`
 - `GET /admin/accounts-config`
 - `PUT /admin/accounts-config`
 
-代理行为说明：  
-Proxy behavior:
-
-- 默认不继承远程站点 `proxy_for_auth`，避免把远程 `localhost` 代理误用到本机。  
-  By default, remote `proxy_for_auth` is not inherited to avoid misusing remote `localhost` proxy locally.
-- 如确有需要，可设置 `REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH=true`。  
-  Set `REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH=true` only if needed.
+其中 `/admin/settings` 返回的 `refresh_settings` 是刷新 worker 的业务配置来源。
+The `refresh_settings` object from `/admin/settings` is the worker's business configuration source.
 
 ## 刷新流程 / Refresh Flow
 
-1. 读取最新配置（环境变量优先，支持热更新）。  
-   Load latest config (env vars override storage; hot reload supported).
-2. 根据刷新窗口筛选即将过期账号。  
-   Select accounts that are close to expiration.
-3. 串行执行刷新任务，避免重复并发刷新同一账号。  
-   Execute refresh tasks serially to avoid duplicate concurrent refreshes.
-4. 写回新凭证与状态。  
-   Persist refreshed credentials and status.
-5. 根据配置执行过期清理与自动注册。  
-   Run optional expiry cleanup and auto-registration.
+1. 加载最新云端/存储配置。
+   Load latest cloud/storage config.
+2. 筛选即将过期的账号。
+   Select accounts close to expiration.
+3. 串行执行浏览器自动化刷新，避免同一账号重复并发。
+   Run browser refresh tasks serially to avoid duplicate concurrent refreshes.
+4. 写回新凭证和账号状态。
+   Persist refreshed credentials and account status.
+5. 按云端配置执行过期清理和自动注册。
+   Run cleanup and auto-registration according to cloud settings.
 
 ## 故障排查 / Troubleshooting
 
-**1) 启动报错：`DATABASE_URL or REMOTE_PROJECT_BASE_URL not configured`**
+### `DATABASE_URL or REMOTE_PROJECT_BASE_URL not configured`
 
-- 需要至少配置一组存储后端。  
-  You must configure at least one storage backend.
+- 至少配置一种存储后端。
+  Configure at least one storage backend.
+- 推荐运行 `python -m worker.cli wizard` 写入远程模式配置。
+  Prefer `python -m worker.cli wizard` for remote mode setup.
 
-**2) 经常出现 Google 无法访问 / Google frequently unreachable**
+### Google 无法访问 / Google Is Unreachable
 
-- 先执行：`python -m worker.cli google`。  
-  First run diagnostics with `python -m worker.cli google`.
-- 确认本机代理可用并设置 `PROXY_FOR_AUTH`。  
-  Confirm local proxy works and set `PROXY_FOR_AUTH`.
-- 远程模式下默认不会继承远程代理，这属于设计行为。  
-  In remote mode, not inheriting remote proxy is expected behavior.
+- 先运行 `python -m worker.cli google`。
+  Run `python -m worker.cli google` first.
+- 如果这台 worker 需要代理访问 Google，请在云端管理后台配置 `proxy_for_auth`。
+  If this worker needs a proxy to reach Google, configure `proxy_for_auth` in the cloud admin panel.
 
-**3) 日志显示 `scheduled refresh disabled, sleeping`**
+### `scheduled refresh disabled, sleeping`
 
-- 存储配置里定时刷新关闭了。  
-  Scheduled refresh is disabled in storage config.
-- 可设置 `FORCE_REFRESH_ENABLED=true` 强制开启。  
-  Set `FORCE_REFRESH_ENABLED=true` to force enable.
+- 云端配置里定时刷新关闭了。
+  Scheduled refresh is disabled in cloud settings.
+- 到云端管理后台开启定时刷新即可，本地业务覆盖变量已不再生效。
+  Enable scheduled refresh in the cloud admin panel; local business override variables no longer apply.
 
-**4) 日志显示 `no accounts need refresh`**
+### `no accounts need refresh`
 
-- 账号未到刷新窗口。  
-  Accounts are not within refresh window yet.
-- 可调大 `REFRESH_WINDOW_HOURS`。  
-  Increase `REFRESH_WINDOW_HOURS` if needed.
+- 账号还没进入刷新窗口，或云端刷新窗口配置太小。
+  Accounts are not within the refresh window, or the cloud refresh window is too small.
+- 到云端管理后台调大刷新窗口。
+  Increase the refresh window in the cloud admin panel.
 
-## 与主服务关系 / Relationship with Main Service
+## 健康检查 / Health Check
 
-- Worker 与主服务可分机部署。  
-  Worker and main service can run on different machines.
-- Worker 负责账号刷新执行，不负责 API 网关业务。  
-  Worker handles refresh execution, not API gateway logic.
-- 远程模式下，本地 worker 仍执行浏览器自动化，只是数据从远程管理接口读写。  
-  In remote mode, browser automation still runs locally; only data I/O goes through remote admin APIs.
+```bash
+curl http://localhost:8080/health
+# {"status":"ok"}
+```
+
+## 和主服务的关系 / Relationship With Main Service
+
+- 主服务负责管理后台、账号配置和 API 网关。
+  The main service handles the admin panel, account config, and API gateway.
+- `refresh-worker` 只负责账号刷新执行。
+  `refresh-worker` only executes account refresh tasks.
+- 远程模式下，本地 worker 仍然执行浏览器自动化，只是数据通过远端管理接口读写。
+  In remote mode, browser automation still runs on the worker machine; only data I/O goes through remote admin APIs.

@@ -101,46 +101,8 @@ async def main() -> None:
         config.retry.auto_register_enabled,
         config.retry.min_account_count,
     )
-    # Log which env overrides are active
-    env_overrides = []
-    if os.getenv("FORCE_REFRESH_ENABLED") is not None:
-        env_overrides.append(f"FORCE_REFRESH_ENABLED={os.getenv('FORCE_REFRESH_ENABLED')}")
-    if os.getenv("REFRESH_INTERVAL_MINUTES") is not None:
-        env_overrides.append(f"REFRESH_INTERVAL_MINUTES={os.getenv('REFRESH_INTERVAL_MINUTES')}")
-    if os.getenv("REFRESH_WINDOW_HOURS") is not None:
-        env_overrides.append(f"REFRESH_WINDOW_HOURS={os.getenv('REFRESH_WINDOW_HOURS')}")
-    if os.getenv("BROWSER_MODE") is not None:
-        env_overrides.append(f"BROWSER_MODE={os.getenv('BROWSER_MODE')}")
-    if os.getenv("BROWSER_HEADLESS") is not None:
-        env_overrides.append(f"BROWSER_HEADLESS={os.getenv('BROWSER_HEADLESS')}")
-    if os.getenv("PROXY_FOR_AUTH") is not None:
-        env_overrides.append("PROXY_FOR_AUTH=***")
-    if os.getenv("DELETE_EXPIRED_ACCOUNTS") is not None:
-        env_overrides.append(f"DELETE_EXPIRED_ACCOUNTS={os.getenv('DELETE_EXPIRED_ACCOUNTS')}")
-    if os.getenv("AUTO_REGISTER_ENABLED") is not None:
-        env_overrides.append(f"AUTO_REGISTER_ENABLED={os.getenv('AUTO_REGISTER_ENABLED')}")
-    if os.getenv("MIN_ACCOUNT_COUNT") is not None:
-        env_overrides.append(f"MIN_ACCOUNT_COUNT={os.getenv('MIN_ACCOUNT_COUNT')}")
-    if os.getenv("REGISTER_DOMAIN") is not None:
-        env_overrides.append(f"REGISTER_DOMAIN={os.getenv('REGISTER_DOMAIN')}")
-    if os.getenv("REGISTER_DEFAULT_COUNT") is not None:
-        env_overrides.append(f"REGISTER_DEFAULT_COUNT={os.getenv('REGISTER_DEFAULT_COUNT')}")
-    if os.getenv("REMOTE_PROJECT_BASE_URL") is not None:
-        env_overrides.append(f"REMOTE_PROJECT_BASE_URL={os.getenv('REMOTE_PROJECT_BASE_URL')}")
-    if os.getenv("REMOTE_PROJECT_PASSWORD") is not None:
-        env_overrides.append("REMOTE_PROJECT_PASSWORD=***")
-    if os.getenv("REMOTE_PROJECT_VERIFY_SSL") is not None:
-        env_overrides.append(f"REMOTE_PROJECT_VERIFY_SSL={os.getenv('REMOTE_PROJECT_VERIFY_SSL')}")
-    if os.getenv("REMOTE_PROJECT_TIMEOUT_SECONDS") is not None:
-        env_overrides.append(f"REMOTE_PROJECT_TIMEOUT_SECONDS={os.getenv('REMOTE_PROJECT_TIMEOUT_SECONDS')}")
-    if os.getenv("REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH") is not None:
-        env_overrides.append(
-            f"REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH={os.getenv('REMOTE_PROJECT_USE_REMOTE_PROXY_FOR_AUTH')}"
-        )
-    if env_overrides:
-        logger.info("[INIT] env overrides active: %s", ", ".join(env_overrides))
-    else:
-        logger.info("[INIT] no env overrides, using database config only")
+    logger.info("[INIT] business config source: %s", storage.get_storage_mode())
+    logger.info("[INIT] env is only used for bootstrap settings (remote URL/password, logging, health)")
 
     # Create refresh service
     from worker.refresh_service import RefreshService

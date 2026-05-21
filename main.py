@@ -375,9 +375,8 @@ RETRY_POLICY = build_retry_policy()
 # ---------- 模型映射配置 ----------
 MODEL_MAPPING = {
     "gemini-auto": None,
-    "gemini-2.5-flash": "gemini-2.5-flash",
     "gemini-2.5-pro": "gemini-2.5-pro",
-    "gemini-3-flash-preview": "gemini-3-flash-preview",
+    "gemini-3.1-flash": "gemini-3.1-flash",
     "gemini-3.1-pro-preview": "gemini-3.1-pro-preview"
 }
 

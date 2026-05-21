@@ -77,6 +77,11 @@ def _normalize_video_output_format(value: str) -> str:
     return "url"
 
 
+IMAGE_MODEL_ALIASES = {
+    "gemini-2.5-flash": "gemini-3.1-flash",
+    "gemini-3-flash-preview": "gemini-3.1-flash",
+}
+
 REMOVED_IMAGE_MODELS = {"gemini-3-pro-preview"}
 
 
@@ -85,7 +90,7 @@ def _normalize_string_list(values: list[str] | None) -> list[str]:
     seen: set[str] = set()
 
     for value in values or []:
-        item = _clean_str(value)
+        item = IMAGE_MODEL_ALIASES.get(_clean_str(value), _clean_str(value))
         if not item or item in REMOVED_IMAGE_MODELS or item in seen:
             continue
         seen.add(item)

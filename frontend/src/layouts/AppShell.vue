@@ -497,9 +497,8 @@ const apiKeyDisplay = computed(() => settingsStore.settings?.basic?.api_key || '
 const sidebarVersionLabel = computed(() => String(currentVersionTag.value || 'v0.0.0').trim())
 const supportedModels = [
   'gemini-auto',
-  'gemini-2.5-flash',
+  'gemini-3.1-flash',
   'gemini-2.5-pro',
-  'gemini-3-flash-preview',
   'gemini-3.1-pro-preview',
   'gemini-imagen',
   'nano-banana-2',

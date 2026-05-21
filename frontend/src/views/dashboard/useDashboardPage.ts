@@ -722,18 +722,25 @@ export function useDashboardPage() {
       return -1
     })
 
-    const series = modelNames.map((modelName, seriesIndex) => ({
-      name: modelName,
-      type: 'bar',
-      stack: 'total',
-      data: (chartData.value.hourlyRequests.modelRequests[modelName] || []).map((value, pointIndex) => ({
-        value,
+    const series = modelNames.map((modelName, seriesIndex) => {
+      const modelColor = getModelColor(modelName)
+      return {
+        name: modelName,
+        type: 'bar',
+        color: modelColor,
+        stack: 'total',
         itemStyle: {
-          color: getModelColor(modelName),
-          borderRadius: topSeriesIndexByPoint[pointIndex] === seriesIndex ? [4, 4, 0, 0] : [0, 0, 0, 0],
+          color: modelColor,
         },
-      })),
-    }))
+        data: (chartData.value.hourlyRequests.modelRequests[modelName] || []).map((value, pointIndex) => ({
+          value,
+          itemStyle: {
+            color: modelColor,
+            borderRadius: topSeriesIndexByPoint[pointIndex] === seriesIndex ? [4, 4, 0, 0] : [0, 0, 0, 0],
+          },
+        })),
+      }
+    })
 
     applyAnimatedOption('hourlyRequests', {
       ...theme,

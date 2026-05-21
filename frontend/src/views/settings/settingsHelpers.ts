@@ -89,6 +89,11 @@ export const normalizeVideoOutputFormat = (
   return 'url'
 }
 
+const IMAGE_MODEL_ALIASES: Record<string, string> = {
+  'gemini-2.5-flash': 'gemini-3.1-flash',
+  'gemini-3-flash-preview': 'gemini-3.1-flash',
+}
+
 const REMOVED_IMAGE_MODELS = new Set(['gemini-3-pro-preview'])
 
 export const normalizeStringArray = (values: Array<string | undefined> | undefined) => {
@@ -104,7 +109,7 @@ export const normalizeStringArray = (values: Array<string | undefined> | undefin
       continue
     }
 
-    const normalized = value.trim()
+    const normalized = IMAGE_MODEL_ALIASES[value.trim()] || value.trim()
     if (!normalized || REMOVED_IMAGE_MODELS.has(normalized) || seen.has(normalized)) {
       continue
     }

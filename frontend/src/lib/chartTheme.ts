@@ -22,9 +22,8 @@ export const modelColors: Record<string, string> = {
   'gemini-3.1-thinking-imagen': chartColors.cyan,
   'gemini-3.1-pro-imagen': chartColors.primary,
   'gemini-3.1-pro-preview': chartColors.primary,
+  'gemini-3.1-flash': chartColors.warning,
   'gemini-2.5-pro': chartColors.cyan,
-  'gemini-2.5-flash': chartColors.warning,
-  'gemini-3-flash-preview': chartColors.pink,
   'gemini-imagen': chartColors.emerald,
   'gemini-3.1-flash-image': chartColors.emerald,
   'gemini-veo': chartColors.success,
@@ -41,9 +40,8 @@ export const validModels = [
   'gemini-3.1-thinking-imagen',
   'gemini-3.1-pro-imagen',
   'gemini-auto',
-  'gemini-2.5-flash',
+  'gemini-3.1-flash',
   'gemini-2.5-pro',
-  'gemini-3-flash-preview',
   'gemini-3.1-pro-preview',
   'gemini-imagen',
   'gemini-3.1-flash-image',
@@ -109,7 +107,13 @@ const legendConfig = {
 
 export function createModelLegendConfig(modelNames: string[]) {
   return {
-    data: modelNames,
+    data: modelNames.map((name) => ({
+      name,
+      icon: 'circle',
+      itemStyle: {
+        color: getModelColor(name),
+      },
+    })),
     textStyle: {
       ...legendConfig.textStyle,
       color: chartTextColor,
@@ -278,14 +282,17 @@ export function createLineSeries(
   return {
     name,
     type: 'line',
+    color,
     data,
     smooth,
     showSymbol,
     lineStyle: {
+      color,
       width: lineStyle?.width ?? lineWidth,
       ...(lineStyle?.type && { type: lineStyle.type }),
     },
     areaStyle: {
+      color,
       opacity: areaOpacity,
     },
     itemStyle: {

@@ -54,7 +54,7 @@
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-    "model": "gemini-2.5-flash",
+    "model": "gemini-3.1-flash",
     "stream": false,
     "temperature": 0.7,
     "messages": [
@@ -87,7 +87,7 @@
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -d '{
-    "model": "gemini-3-flash-preview",
+    "model": "gemini-3.1-flash",
     "stream": false,
     "messages": [
       {

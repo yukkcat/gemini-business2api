@@ -7,7 +7,7 @@
   <strong>简体中文</strong> | <a href="docs/README_EN.md">English</a>
 </p>
 <p align="center"><img src="https://img.shields.io/badge/License-CNC--1.0-red.svg" /> <img src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white" /> <img src="https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi&logoColor=white" /> <img src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vue.js&logoColor=white" /> <img src="https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white" /> <img src="https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white" /></p>
-<p align="center"><strong>当前稳定版本：v0.3.2</strong> | <a href="https://github.com/yukkcat/gemini-business2api/releases/tag/v0.3.2">发布说明</a> | <a href="https://github.com/yukkcat/gemini-business2api/releases">全部版本</a></p>
+<p align="center"><strong>当前稳定版本：v0.3.3</strong> | <a href="https://github.com/yukkcat/gemini-business2api/releases/tag/v0.3.3">发布说明</a> | <a href="https://github.com/yukkcat/gemini-business2api/releases">全部版本</a></p>
 
 > [!IMPORTANT]
 > 自 **v0.3.0** 起，主线仓库已彻底归为 **2API 主线**：
@@ -53,9 +53,8 @@ Gemini Business2API 是一个把 [Gemini Business](https://business.gemini.googl
 | 模型 ID                  | 识图 | 原生联网 | 文件多模态 | 图片生成 | 视频生成 |
 | ------------------------ | ---- | -------- | ---------- | -------- | -------- |
 | `gemini-auto`            | ✅    | ✅        | ✅          | 可选     | -        |
-| `gemini-2.5-flash`       | ✅    | ✅        | ✅          | 可选     | -        |
 | `gemini-2.5-pro`         | ✅    | ✅        | ✅          | 可选     | -        |
-| `gemini-3-flash-preview` | ✅    | ✅        | ✅          | 可选     | -        |
+| `gemini-3.1-flash`       | ✅    | ✅        | ✅          | 可选     | -        |
 | `gemini-3.1-pro-preview` | ✅    | ✅        | ✅          | 可选     | -        |
 | `gemini-imagen`          | ✅    | ✅        | ✅          | ✅        | -        |
 | `gemini-veo`             | ✅    | ✅        | ✅          | -        | ✅        |
@@ -171,7 +170,7 @@ curl -fsSL https://raw.githubusercontent.com/yukkcat/gemini-business2api/main/de
 固定到当前正式版：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/yukkcat/gemini-business2api/v0.3.2/deploy/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/yukkcat/gemini-business2api/v0.3.3/deploy/install.sh | sudo bash
 ```
 
 预设 `refresh-worker` 默认开启：
@@ -268,4 +267,3 @@ Compose 默认挂载：
 [![Star History Chart](https://api.star-history.com/svg?repos=yukkcat/gemini-business2api&type=date&legend=top-left)](https://www.star-history.com/#yukkcat/gemini-business2api&type=date&legend=top-left)
 
 **如果这个项目对你有帮助，请给个 ⭐ Star！**
-

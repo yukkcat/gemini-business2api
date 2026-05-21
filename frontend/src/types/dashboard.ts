@@ -3,9 +3,9 @@ export type DashboardTimeRange = '24h' | '7d' | '30d'
 export const DASHBOARD_TIME_RANGE_VALUES = ['24h', '7d', '30d'] as const satisfies readonly DashboardTimeRange[]
 
 export const DASHBOARD_TIME_RANGE_OPTIONS = [
-  { label: '24??', value: '24h' },
-  { label: '7?', value: '7d' },
-  { label: '30?', value: '30d' },
+  { label: '24小时', value: '24h' },
+  { label: '7天', value: '7d' },
+  { label: '30天', value: '30d' },
 ] as const satisfies ReadonlyArray<{ label: string; value: DashboardTimeRange }>
 
 export const normalizeDashboardTimeRange = (

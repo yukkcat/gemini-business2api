@@ -265,6 +265,6 @@ This project uses the **Cooperative Non-Commercial License (CNC-1.0)**.
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yukkcat/gemini-business2api&type=date&legend=top-left)](https://www.star-history.com/#yukkcat/gemini-business2api&type=date&legend=top-left)
+[![Star History Chart](https://star-history.dera.page/svg?repos=yukkcat/gemini-business2api&type=date&legend=top-left)](https://star-history.dera.page/#yukkcat/gemini-business2api&type=date&legend=top-left)
 
 **If this project helps you, please give it a ⭐ Star!**

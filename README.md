@@ -264,6 +264,6 @@ Compose 默认挂载：
 
 ## ⭐ Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=yukkcat/gemini-business2api&type=date&legend=top-left)](https://www.star-history.com/#yukkcat/gemini-business2api&type=date&legend=top-left)
+[![Star History Chart](https://star-history.dera.page/svg?repos=yukkcat/gemini-business2api&type=date&legend=top-left)](https://star-history.dera.page/#yukkcat/gemini-business2api&type=date&legend=top-left)
 
 **如果这个项目对你有帮助，请给个 ⭐ Star！**
